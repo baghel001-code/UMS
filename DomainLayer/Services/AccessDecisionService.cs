@@ -8,7 +8,7 @@ namespace DomainLayer.Services
     /// <summary>
     /// Policy Decision Point. Evaluates an access request layer by layer and explains every step:
     ///   Tenant → Identity → Application → Module → Resource.Action (RBAC) → Role scope → ABAC policies (deny-overrides).
-    /// The admin panel's simulator (admin-panel/src/engine/pdp.ts) implements the same algorithm; keep them in step.
+    /// Used by POST /api/v1/authorize, the admin API's own permission filter and the admin portal's Access Simulator.
     /// </summary>
     public static class AccessDecisionService
     {

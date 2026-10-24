@@ -1,0 +1,27 @@
+@* 7 × 24 hour grid. Cell(day, hour) returns (on, tooltip). *@
+<div class="ums-week" role="img" aria-label="@AriaLabel">
+    <span></span>
+    @for (var h = 0; h < 24; h++)
+    {
+        <span class="h">@(h % 3 == 0 ? h.ToString() : "")</span>
+    }
+    @foreach (var day in Enum.GetValues<Weekday>())
+    {
+        <span class="d">@day</span>
+        @for (var h = 0; h < 24; h++)
+        {
+            var (on, tip) = Cell(day, h);
+            var hour = h;
+            <span class="c @(on ? OnClass : OffClass) @(OnClick.HasDelegate ? "click" : "")" title="@tip"
+                  @onclick="() => OnClick.InvokeAsync((day, hour))"></span>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Func<Weekday, int, (bool On, string Tip)> Cell { get; set; } = (_, _) => (false, "");
+    [Parameter] public string OnClass { get; set; } = "on";
+    [Parameter] public string OffClass { get; set; } = "";
+    [Parameter] public string AriaLabel { get; set; } = "Weekly hours";
+    [Parameter] public EventCallback<(Weekday Day, int Hour)> OnClick { get; set; }
+}

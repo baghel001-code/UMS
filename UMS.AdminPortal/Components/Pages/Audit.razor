@@ -1,0 +1,71 @@
+@page "/audit"
+@inherits TenantPage
+@inject IDialogService Dialogs
+@inject IJSRuntime JS
+
+<PageTitle>Audit Trail · VMM UMS</PageTitle>
+
+<PageHeader Title="Audit Trail" Subtitle="Who changed what, when and from where — with before/after values for every user, role, policy and application change.">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync">Export</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <MudToolBar Gutters="true" Class="gap-3 py-2" Style="height:auto;flex-wrap:wrap">
+        <MudTextField @bind-Value="_search" Placeholder="Search summary, actor…" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:260px" />
+        <MudSelect T="string" @bind-Value="_entity" Label="Entity" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="max-width:200px">
+            @foreach (var e in _logs.Select(l => l.Entity).Distinct().Order())
+            {
+                <MudSelectItem T="string" Value="e">@e</MudSelectItem>
+            }
+        </MudSelect>
+    </MudToolBar>
+    <MudTable Items="Rows" Hover="true" Dense="true" Class="ums-table" Elevation="0" Loading="Loading" RowsPerPage="25"
+              OnRowClick="(TableRowClickEventArgs<AuditLogDto> e) => ShowAsync(e.Item)">
+        <HeaderContent><MudTh>Time</MudTh><MudTh>Actor</MudTh><MudTh>Entity</MudTh><MudTh>Action</MudTh><MudTh>Summary</MudTh><MudTh>IP / Device</MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd Style="white-space:nowrap">@Fmt.DateTime(context.Timestamp)</MudTd>
+            <MudTd>@context.Actor</MudTd>
+            <MudTd>@context.Entity</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="ActionColor(context.Action)">@context.Action</MudChip></MudTd>
+            <MudTd>@context.Summary</MudTd>
+            <MudTd Class="muted" Style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@context.Ip<br />@context.Device</MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-6 muted">No audit entries.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<AuditLogDto> _logs = new();
+    private string _search = "";
+    private string? _entity;
+
+    private IEnumerable<AuditLogDto> Rows => _logs
+        .Where(a => (_entity is null || a.Entity == _entity) && $"{a.Summary} {a.Actor} {a.EntityId}".Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(a => a.Timestamp);
+
+    private static Color ActionColor(AuditAction a) => a switch
+    {
+        AuditAction.Delete or AuditAction.Revoke => Color.Error,
+        AuditAction.Create or AuditAction.Assign => Color.Success,
+        _ => Color.Info
+    };
+
+    protected override async Task LoadAsync() => _logs = await Api.AuditLogsAsync(5000);
+
+    private async Task ShowAsync(AuditLogDto log) =>
+        await Dialogs.ShowAsync<AuditDetailDialog>($"{log.Entity} {log.Action} · {Fmt.DateTime(log.Timestamp)}",
+            new DialogParameters<AuditDetailDialog> { { x => x.Log, log } }, new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+
+    private async Task ExportAsync()
+    {
+        static string Esc(object? v) => "\"" + (v?.ToString() ?? "").Replace("\"", "\"\"") + "\"";
+        var lines = new List<string> { "timestamp,actor,entity,entityId,action,summary,ip,device,oldValues,newValues" };
+        lines.AddRange(Rows.Select(a => string.Join(",", new object?[] { a.Timestamp.ToString("s"), a.Actor, a.Entity, a.EntityId, a.Action, a.Summary, a.Ip, a.Device,
+            a.OldValues?.GetRawText(), a.NewValues?.GetRawText() }.Select(Esc))));
+        await JS.InvokeVoidAsync("ums.download", "audit-trail.csv", "text/csv", string.Join("\n", lines));
+    }
+}

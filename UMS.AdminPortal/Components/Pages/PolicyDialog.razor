@@ -1,0 +1,268 @@
+@inject UmsApiClient Api
+@inject Ui Ui
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="7"><MudTextField @bind-Value="Model.Name" Label="Name" Placeholder="e.g. Payroll only during office hours" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="6" md="2"><MudNumericField @bind-Value="Model.Priority" Label="Priority (lower first)" Variant="Variant.Outlined" Min="0" Max="10000" /></MudItem>
+            <MudItem xs="6" md="3" Class="d-flex align-center"><MudSwitch @bind-Value="Model.IsActive" Color="Color.Success" Label="Active" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="Model.Description" Label="Description" Variant="Variant.Outlined" /></MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.h6" Class="mt-5 mb-2">1 · Effect</MudText>
+        <MudGrid Spacing="2">
+            @foreach (var (effect, help) in EffectHelp)
+            {
+                <MudItem xs="12" md="4">
+                    <MudPaper Outlined="true" Class="pa-3" Style="@EffectCardStyle(effect)" @onclick="() => Model.Effect = effect">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudIcon Icon="@(Model.Effect == effect ? Icons.Material.Filled.RadioButtonChecked : Icons.Material.Filled.RadioButtonUnchecked)" Color="Color.Primary" Size="Size.Small" />
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Policies.EffectColor(effect)">@effect</MudChip>
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Class="muted">@help</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudText Typo="Typo.h6" Class="mt-5 mb-2">2 · Target — which requests this policy applies to</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Value="Model.App" ValueChanged="v => { Model.App = v; Model.Module = Model.Resource = Any; }" Label="Application" Variant="Variant.Outlined">
+                    <MudSelectItem T="string" Value="Any">* All applications</MudSelectItem>
+                    @foreach (var a in Applications)
+                    {
+                        <MudSelectItem T="string" Value="a.Code">@a.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Value="Model.Module" ValueChanged="v => { Model.Module = v; Model.Resource = Any; }" Label="Module" Variant="Variant.Outlined" Disabled="@(App is null)">
+                    <MudSelectItem T="string" Value="Any">* All modules</MudSelectItem>
+                    @foreach (var m in App?.Modules ?? new())
+                    {
+                        <MudSelectItem T="string" Value="m.Code">@m.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" @bind-Value="Model.Resource" Label="Resource" Variant="Variant.Outlined" Disabled="@(Module is null)">
+                    <MudSelectItem T="string" Value="Any">* All resources</MudSelectItem>
+                    @foreach (var r in Module?.Resources ?? new())
+                    {
+                        <MudSelectItem T="string" Value="r.Code">@r.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Label="Only for users with role (optional)" Variant="Variant.Outlined" MultiSelection="true"
+                           SelectedValues="Model.Roles" SelectedValuesChanged="v => Model.Roles = v.ToList()">
+                    @foreach (var r in Roles)
+                    {
+                        <MudSelectItem T="string" Value="r.Code">@r.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="1">
+                    <MudText Typo="Typo.caption" Class="muted mr-2">Actions:</MudText>
+                    <MudCheckBox @bind-Value="Model.AllActions" Label="All" Color="Color.Primary" Size="Size.Small" />
+                    @if (!Model.AllActions)
+                    {
+                        @foreach (var a in Enum.GetValues<AccessAction>())
+                        {
+                            <MudCheckBox T="bool" Value="Model.Actions.Contains(a)" ValueChanged="on => ToggleAction(a, on)" Label="@a.ToString()" Color="Color.Primary" Size="Size.Small" />
+                        }
+                    }
+                    @if (Model.Roles.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="muted ml-4">applies to all users</MudText>
+                    }
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.h6" Class="mt-5 mb-2">3 · Conditions</MudText>
+        <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudText Typo="Typo.caption" Class="muted mr-1">Templates:</MudText>
+            @foreach (var t in Templates)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => t.Apply(this)">@t.Label</MudButton>
+            }
+        </MudStack>
+        <MudSelect @bind-Value="Model.Match" Label="Match" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:280px" Class="mb-3">
+            <MudSelectItem Value="ConditionMatch.All">ALL conditions (AND)</MudSelectItem>
+            <MudSelectItem Value="ConditionMatch.Any">ANY condition (OR)</MudSelectItem>
+        </MudSelect>
+        @foreach (var c in Model.Conditions)
+        {
+            <MudGrid Spacing="1" Class="mb-1">
+                <MudItem xs="12" sm="4">
+                    <MudAutocomplete T="string" Value="c.Attribute" ValueChanged="v => SetAttribute(c, v)" SearchFunc="SearchAttributes" CoerceValue="true"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono" Placeholder="user.department" />
+                </MudItem>
+                <MudItem xs="6" sm="2">
+                    <MudSelect T="ConditionOperator" Value="c.Operator" ValueChanged="op => SetOperator(c, op)" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var (op, label) in DomainLayer.Services.ConditionEvaluator.Labels)
+                        {
+                            <MudSelectItem T="ConditionOperator" Value="op">@label</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    @if (c.IsSchedule)
+                    {
+                        <MudSelect T="string" @bind-Value="c.Value" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var s in Schedules)
+                            {
+                                <MudSelectItem T="string" Value="s.Id.ToString()">@s.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                    else if (c.ValueIsAttribute)
+                    {
+                        <MudAutocomplete T="string" @bind-Value="c.Value" SearchFunc="SearchAttributes" CoerceValue="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         Class="mono" Placeholder="user.location" />
+                    }
+                    else
+                    {
+                        <MudTextField @bind-Value="c.Value" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                                      Placeholder="@(c.Operator is ConditionOperator.In or ConditionOperator.NotIn ? "a,b,c" : "value")" />
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="2" Class="d-flex align-center">
+                    <MudTooltip Text="Compare with another attribute instead of a fixed value">
+                        <MudCheckBox T="bool" Value="c.ValueIsAttribute" ValueChanged="on => { c.ValueIsAttribute = on; c.Value = string.Empty; }" Disabled="c.IsSchedule"
+                                     Label="attr" Size="Size.Small" Color="Color.Primary" />
+                    </MudTooltip>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small" OnClick="() => Model.Conditions.Remove(c)" />
+                </MudItem>
+            </MudGrid>
+        }
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="() => Model.Conditions.Add(new ConditionEdit())">Add condition</MudButton>
+
+        <MudText Typo="Typo.h6" Class="mt-5 mb-2">Rule expression (stored as Policies.RuleExpression)</MudText>
+        <div class="ums-expr">@($"{Model.Effect.ToString().ToUpperInvariant()} {Model.App}.{Model.Module}.{Model.Resource}.{ActionsText}{RolesText}")
+WHEN @DomainPreview.RuleText(Model.ToDto(), Schedules)</div>
+    </DialogContent>
+    <DialogActions>
+        @if (!IsNew)
+        {
+            <MudButton Color="Color.Error" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudButton StartIcon="@Icons.Material.Filled.PlayCircle" OnClick="TestInSimulator">Test in simulator</MudButton>
+        <MudSpacer />
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save policy</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public PolicyEdit Model { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public List<ApplicationDto> Applications { get; set; } = new();
+    [Parameter] public List<RoleDto> Roles { get; set; } = new();
+    [Parameter] public List<ScheduleDto> Schedules { get; set; } = new();
+
+    private const string Any = "*";
+    private bool _busy;
+
+    public static readonly string[] KnownAttributes =
+    {
+        "user.department", "user.designation", "user.location", "user.region", "user.employmentType", "user.empCode", "user.mfaEnabled", "user.roles",
+        "resource.store", "resource.region", "resource.department", "resource.amount", "resource.status", "resource.ownerEmpCode", "resource.approverEmpCode", "resource.vendorCode",
+        "env.now", "env.time", "env.day", "env.date", "env.isHoliday", "env.network", "env.device", "env.channel", "env.ip",
+    };
+
+    private static readonly (PolicyEffect, string)[] EffectHelp =
+    {
+        (PolicyEffect.Restrict, "Conditions MUST hold, otherwise the request is denied. Use for office hours, own-store-only, MFA required…"),
+        (PolicyEffect.Deny, "If the conditions hold, the request is denied. Use for limits and blocks: refund > ₹10,000, export on an unmanaged device…"),
+        (PolicyEffect.Grant, "If the conditions hold, access is granted even without a role permission (still subject to Restrict/Deny). Use for owner / named-approver access."),
+    };
+
+    private record Template(string Label, Action<PolicyDialog> Apply);
+
+    private static ConditionEdit C(string attribute, ConditionOperator op, string value, bool isAttribute = false) =>
+        new() { Attribute = attribute, Operator = op, Value = value, ValueIsAttribute = isAttribute };
+
+    private void Use(PolicyEffect effect, params ConditionEdit[] conditions)
+    {
+        Model.Effect = effect;
+        Model.Match = ConditionMatch.All;
+        Model.Conditions = conditions.ToList();
+    }
+
+    private string FirstSchedule => Schedules.FirstOrDefault()?.Id.ToString() ?? "";
+
+    private static readonly Template[] Templates =
+    {
+        new("Office hours only", d => d.Use(PolicyEffect.Restrict, C("env.now", ConditionOperator.InSchedule, d.FirstSchedule))),
+        new("Own store only", d => d.Use(PolicyEffect.Restrict, C("resource.store", ConditionOperator.Eq, "user.location", true))),
+        new("Same department", d => d.Use(PolicyEffect.Restrict, C("resource.department", ConditionOperator.Eq, "user.department", true))),
+        new("Amount limit", d => d.Use(PolicyEffect.Deny, C("resource.amount", ConditionOperator.Gt, "50000"))),
+        new("MFA + office network", d => d.Use(PolicyEffect.Restrict, C("user.mfaEnabled", ConditionOperator.Eq, "true"), C("env.network", ConditionOperator.In, "Office LAN,VPN"))),
+        new("Owner can access", d => d.Use(PolicyEffect.Grant, C("resource.ownerEmpCode", ConditionOperator.Eq, "user.empCode", true))),
+        new("Block on weekends", d => d.Use(PolicyEffect.Deny, C("env.day", ConditionOperator.In, "Sat,Sun"))),
+    };
+
+    private ApplicationDto? App => Applications.FirstOrDefault(a => a.Code == Model.App);
+    private AppModuleDto? Module => App?.Modules.FirstOrDefault(m => m.Code == Model.Module);
+    private string ActionsText => Model.AllActions || Model.Actions.Count == 0 ? "*" : string.Join('|', Model.Actions);
+    private string RolesText => Model.Roles.Count > 0 ? $" FOR ROLES [{string.Join(", ", Model.Roles)}]" : "";
+    private string EffectCardStyle(PolicyEffect e) =>
+        "cursor:pointer;height:100%;" + (Model.Effect == e ? "border-color:var(--blue-600);box-shadow:0 0 0 2px rgba(21,89,224,.18)" : "");
+
+    private Task<IEnumerable<string>> SearchAttributes(string? text, CancellationToken _) =>
+        Task.FromResult(KnownAttributes.Where(a => string.IsNullOrEmpty(text) || a.Contains(text, StringComparison.OrdinalIgnoreCase)).Append(text ?? "").Distinct().Where(a => a != ""));
+
+    private void SetAttribute(ConditionEdit c, string attribute)
+    {
+        c.Attribute = attribute;
+        if (attribute == "env.now") SetOperator(c, ConditionOperator.InSchedule);
+    }
+
+    private void SetOperator(ConditionEdit c, ConditionOperator op)
+    {
+        c.Operator = op;
+        if (c.IsSchedule)
+        {
+            c.Attribute = "env.now";
+            c.ValueIsAttribute = false;
+            if (Schedules.All(s => s.Id.ToString() != c.Value)) c.Value = FirstSchedule;
+        }
+    }
+
+    private void ToggleAction(AccessAction a, bool on)
+    {
+        if (on) Model.Actions.Add(a);
+        else Model.Actions.Remove(a);
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        var saved = await Ui.Run(() => Api.SavePolicyAsync(Model.ToDto()));
+        _busy = false;
+        if (saved is null) return;
+        Ui.Ok("Policy saved");
+        MudDialog.Close(DialogResult.Ok(saved));
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await Dialogs.ShowMessageBox("Delete policy", $"Delete policy '{Model.Name}'?", yesText: "Delete", cancelText: "Cancel") != true) return;
+        if (await Ui.Run(() => Api.DeletePolicyAsync(Model.Id))) MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void TestInSimulator()
+    {
+        MudDialog.Cancel();
+        string Seg(string s) => s == Any ? "" : s;
+        Nav.NavigateTo($"simulator?app={Seg(Model.App)}&module={Seg(Model.Module)}&resource={Seg(Model.Resource)}");
+    }
+}

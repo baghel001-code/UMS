@@ -222,6 +222,11 @@ namespace WebApi.Controllers.V1
         [HttpPost, RequirePermission("POLICIES", "DECISION", A.View)]
         public async Task<ActionResult<DomainLayer.Authorization.AccessDecision>> Check(AccessRequestDto body, CancellationToken ct) =>
             await Mediator.Send(new CheckAccessQuery(Tenant.TenantId, body, HttpContext.Connection.RemoteIpAddress?.ToString() ?? ""), ct);
+
+        /// <summary>The same request evaluated for every hour of the week that contains env.dateTime (used by the simulator heat-map).</summary>
+        [HttpPost("week"), RequirePermission("POLICIES", "DECISION", A.View)]
+        public async Task<ActionResult<List<WeekCellDto>>> Week(AccessRequestDto body, CancellationToken ct) =>
+            await Mediator.Send(new CheckAccessWeekQuery(Tenant.TenantId, body), ct);
     }
 
     [Route("api/v1")]

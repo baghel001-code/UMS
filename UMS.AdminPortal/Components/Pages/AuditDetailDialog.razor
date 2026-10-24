@@ -1,0 +1,45 @@
+@using System.Text.Json
+<MudDialog>
+    <DialogContent>
+        <MudText><b>@Log.Actor</b> — @Log.Summary</MudText>
+        @if (Changed.Count > 0)
+        {
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="my-2">
+                <MudText Typo="Typo.caption" Class="muted">Changed fields:</MudText>
+                @foreach (var k in Changed)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@k</MudChip>
+                }
+            </MudStack>
+        }
+        <MudGrid Spacing="2" Class="mt-1">
+            <MudItem xs="12" md="6"><MudText Typo="Typo.subtitle2" Class="mb-1">Before</MudText><pre class="ums-json">@Pretty(Log.OldValues)</pre></MudItem>
+            <MudItem xs="12" md="6"><MudText Typo="Typo.subtitle2" Class="mb-1">After</MudText><pre class="ums-json">@Pretty(Log.NewValues)</pre></MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.caption" Class="muted d-block mt-2">@Log.Ip · @Log.Device</MudText>
+    </DialogContent>
+    <DialogActions><MudButton OnClick="() => MudDialog.Close()">Close</MudButton></DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public AuditLogDto Log { get; set; } = default!;
+
+    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    private static string Pretty(JsonElement? json) => json is null ? "null" : JsonSerializer.Serialize(json.Value, Indented);
+
+    private List<string> Changed
+    {
+        get
+        {
+            if (Log.OldValues is not { ValueKind: JsonValueKind.Object } a || Log.NewValues is not { ValueKind: JsonValueKind.Object } b) return new();
+            var keys = a.EnumerateObject().Select(p => p.Name).Union(b.EnumerateObject().Select(p => p.Name));
+            return keys.Where(k =>
+            {
+                var av = a.TryGetProperty(k, out var x) ? x.GetRawText() : null;
+                var bv = b.TryGetProperty(k, out var y) ? y.GetRawText() : null;
+                return av != bv;
+            }).ToList();
+        }
+    }
+}

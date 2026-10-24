@@ -1,0 +1,290 @@
+@page "/"
+@inherits TenantPage
+@inject AuthSession Session
+@inject TenantState Tenant
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard · VMM UMS</PageTitle>
+
+<section class="ums-hero">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Wrap="Wrap.Wrap">
+        <div>
+            <h1>@Greeting(), @(Session.FullName?.Split(' ')[0] ?? "Administrator")</h1>
+            <p>@Tenant.Current?.Name · @DateTime.Now.ToString("dddd, d MMMM yyyy")</p>
+        </div>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            <span class="ums-hero-badge">@_apps.Count applications</span>
+            <span class="ums-hero-badge">@Fmt.Number(_users.Count) users</span>
+            <span class="ums-hero-badge">@_policies.Count(p => p.IsActive) active policies</span>
+        </MudStack>
+    </MudStack>
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mt-5">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PersonAdd" Href="users?new=1">Add user</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AddModerator" Href="roles?new=1">New role</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Policy" Href="policies?new=1">New policy</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PlayCircle" Href="simulator">Test someone's access</MudButton>
+    </MudStack>
+</section>
+
+@if (Loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+
+<MudGrid Spacing="3" Class="mb-2">
+    @foreach (var k in Kpis())
+    {
+        <MudItem xs="12" sm="6" lg="3">
+            <MudPaper Class="ums-card" Elevation="0">
+                <a class="ums-card ums-stat" href="@k.Href">
+                    <div class="ums-stat-ico"><MudIcon Icon="@k.Icon" /></div>
+                    <div>
+                        <div class="label">@k.Label</div>
+                        <div class="value">@k.Value</div>
+                        <div class="sub">@k.Sub</div>
+                    </div>
+                </a>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+<MudPaper Class="ums-card my-4" Elevation="0">
+    <div class="ums-card-head">
+        <div>
+            <MudText Typo="Typo.h6">How every access request is checked</MudText>
+            <MudText Typo="Typo.caption" Class="muted">Any failing step denies the request. Grant policies can open access without a role (e.g. the approver named on a PO).</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Href="simulator">Try it</MudButton>
+    </div>
+    <div class="ums-card-body">
+        <div class="ums-steps">
+            @foreach (var (title, text) in Layers)
+            {
+                <div class="ums-step"><b>@title</b><span>@text</span></div>
+            }
+        </div>
+    </div>
+</MudPaper>
+
+<MudGrid Spacing="3" Class="mb-2">
+    <MudItem xs="12" md="4">
+        <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+            <div class="ums-card-head">
+                <MudText Typo="Typo.h6">Access decisions</MudText>
+                <MudLink Href="actions" Typo="Typo.caption">View trail →</MudLink>
+            </div>
+            <div class="ums-card-body">
+                <MudStack Row="true" Spacing="5" Wrap="Wrap.Wrap">
+                    <div class="ums-kv"><span class="num">@_allowed</span><span class="muted">✓ allowed</span></div>
+                    <div class="ums-kv"><span class="num">@_denied</span><span class="muted">✕ denied</span></div>
+                    <div class="ums-kv"><span class="num">@Pct(_allowed, _allowed + _denied)%</span><span class="muted">allow rate</span></div>
+                </MudStack>
+                <div class="ums-legend my-3">
+                    <span><i style="background:var(--ok-mark)"></i>✓ Allow</span>
+                    <span><i style="background:var(--bad-mark)"></i>✕ Deny</span>
+                </div>
+                @foreach (var a in _byApp)
+                {
+                    <div class="ums-hbar">
+                        <span>@a.App</span>
+                        <div class="ums-track">
+                            <div class="ums-seg ok" style="width:@Width(a.Allow, _maxApp)" title="@($"{a.App}: {a.Allow} allowed")"></div>
+                            <div class="ums-seg bad" style="width:@Width(a.Deny, _maxApp)" title="@($"{a.App}: {a.Deny} denied")"></div>
+                        </div>
+                        <b>@a.Total</b>
+                    </div>
+                }
+                @if (_byApp.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Class="muted">No decisions recorded yet.</MudText>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+            <div class="ums-card-head">
+                <MudText Typo="Typo.h6">Users by status</MudText>
+                <MudLink Href="users" Typo="Typo.caption">Manage →</MudLink>
+            </div>
+            <div class="ums-card-body">
+                <div class="ums-split" role="img" aria-label="@($"{_active} active, {_inactive} inactive, {_locked} locked")">
+                    <div class="ums-seg ok" style="flex:@_active" title="Active: @_active"></div>
+                    <div class="ums-seg warn" style="flex:@_inactive" title="Inactive: @_inactive"></div>
+                    <div class="ums-seg bad" style="flex:@_locked" title="Locked: @_locked"></div>
+                </div>
+                <div class="ums-legend">
+                    <span><i style="background:var(--ok-mark)"></i>✓ Active @_active (@Pct(_active, _users.Count)%)</span>
+                    <span><i style="background:var(--warn-mark)"></i>⏸ Inactive @_inactive</span>
+                    <span><i style="background:var(--bad-mark)"></i>🔒 Locked @_locked</span>
+                </div>
+                <MudText Typo="Typo.subtitle2" Class="mt-5 mb-2">Top deny reasons</MudText>
+                <MudStack Spacing="2">
+                    @foreach (var (reason, n) in _denyReasons)
+                    {
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudText Typo="Typo.caption">@reason</MudText>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">@n</MudChip>
+                        </MudStack>
+                    }
+                    @if (_denyReasons.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="muted">No denials.</MudText>
+                    }
+                </MudStack>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+            <div class="ums-card-head"><MudText Typo="Typo.h6">Users by department</MudText></div>
+            <div class="ums-card-body">
+                @foreach (var (dept, n) in _byDept)
+                {
+                    <div class="ums-hbar">
+                        <span title="@dept">@dept</span>
+                        <div class="ums-track"><div class="ums-seg blue" style="width:@Width(n, _maxDept)" title="@($"{dept}: {n}")"></div></div>
+                        <b>@n</b>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+            <div class="ums-card-head"><MudText Typo="Typo.h6">Needs attention</MudText></div>
+            <MudList T="string" Dense="true" Class="px-2">
+                @foreach (var a in Attention())
+                {
+                    <MudListItem T="string" Href="@a.Href">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText>@a.Label</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="a.Color" Variant="Variant.Text">@a.Icon @a.Value</MudChip>
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+            <div class="ums-card-head">
+                <MudText Typo="Typo.h6">Recent admin changes</MudText>
+                <MudLink Href="audit" Typo="Typo.caption">Audit trail →</MudLink>
+            </div>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    @foreach (var a in _audit.Take(7))
+                    {
+                        <tr>
+                            <td style="white-space:nowrap" class="muted">@Fmt.DateTime(a.Timestamp)</td>
+                            <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">@a.Action</MudChip></td>
+                            <td>@a.Summary</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private static readonly (string, string)[] Layers =
+    {
+        ("Tenant", "Business unit is active"),
+        ("Identity", "User active, not locked or expired"),
+        ("Application", "A role opens the app"),
+        ("Module", "A role opens the module"),
+        ("Resource · Action", "APP.MODULE.RESOURCE.ACTION"),
+        ("Scope", "e.g. only store S045"),
+        ("Policies", "Office hours, limits, device, owner"),
+    };
+
+    private record Kpi(string Label, string Value, string Sub, string Icon, string Href);
+    private record AppDecisions(string App, int Allow, int Deny, int Total);
+    private record AttentionItem(string Label, int Value, Color Color, string Icon, string Href);
+
+    private List<UserAccountDto> _users = new();
+    private List<ApplicationDto> _apps = new();
+    private List<RoleDto> _roles = new();
+    private List<PolicyDto> _policies = new();
+    private List<ScheduleDto> _schedules = new();
+    private List<AuditLogDto> _audit = new();
+    private List<UserActionLogDto> _actions = new();
+    private List<ExceptionLogDto> _exceptions = new();
+
+    private int _active, _inactive, _locked, _allowed, _denied, _maxApp = 1, _maxDept = 1;
+    private List<AppDecisions> _byApp = new();
+    private List<(string, int)> _byDept = new();
+    private List<(string, int)> _denyReasons = new();
+
+    protected override async Task LoadAsync()
+    {
+        var users = Api.UsersAsync();
+        var apps = Api.ApplicationsAsync();
+        var roles = Api.RolesAsync();
+        var policies = Api.PoliciesAsync();
+        var schedules = Api.SchedulesAsync();
+        var audit = Api.AuditLogsAsync(20);
+        var actions = Api.UserActionsAsync();
+        var exceptions = Api.ExceptionsAsync();
+        await Task.WhenAll(users, apps, roles, policies, schedules, audit, actions, exceptions);
+        (_users, _apps, _roles, _policies, _schedules, _audit, _actions, _exceptions) =
+            (users.Result, apps.Result, roles.Result, policies.Result, schedules.Result, audit.Result, actions.Result, exceptions.Result);
+
+        _active = _users.Count(u => u.Status == UserStatus.Active);
+        _inactive = _users.Count(u => u.Status == UserStatus.Inactive);
+        _locked = _users.Count(u => u.Status == UserStatus.Locked);
+        _allowed = _actions.Count(a => a.Decision == AccessDecisionResult.Allow);
+        _denied = _actions.Count - _allowed;
+        _byApp = _actions.GroupBy(a => a.App)
+            .Select(g => new AppDecisions(g.Key, g.Count(a => a.Decision == AccessDecisionResult.Allow), g.Count(a => a.Decision == AccessDecisionResult.Deny), g.Count()))
+            .OrderByDescending(a => a.Total).Take(6).ToList();
+        _maxApp = Math.Max(1, _byApp.Select(a => a.Total).DefaultIfEmpty().Max());
+        _byDept = _users.GroupBy(u => u.Department).Select(g => (g.Key, g.Count())).OrderByDescending(x => x.Item2).Take(8).ToList();
+        _maxDept = Math.Max(1, _byDept.Select(x => x.Item2).DefaultIfEmpty().Max());
+        _denyReasons = _actions.Where(a => a.Decision == AccessDecisionResult.Deny).GroupBy(a => a.Reason)
+            .Select(g => (g.Key, g.Count())).OrderByDescending(x => x.Item2).Take(4).ToList();
+    }
+
+    private IEnumerable<Kpi> Kpis()
+    {
+        var inHouse = _apps.Count(a => a.Type == AppType.InHouse);
+        var perms = _apps.Sum(a => a.Modules.Sum(m => m.Resources.Sum(r => r.Actions.Count)));
+        yield return new("Users", Fmt.Number(_users.Count), $"{Fmt.Number(_active)} active · {_locked} locked", Icons.Material.Filled.People, "users");
+        yield return new("Applications", _apps.Count.ToString(), $"{inHouse} in-house · {_apps.Count - inHouse} third-party", Icons.Material.Filled.Apps, "applications");
+        yield return new("Roles", _roles.Count.ToString(), $"{perms} grantable permissions", Icons.Material.Filled.Shield, "roles");
+        yield return new("ABAC policies", _policies.Count(p => p.IsActive).ToString(), $"{_schedules.Count} office-hour schedules", Icons.Material.Filled.Policy, "policies");
+    }
+
+    private IEnumerable<AttentionItem> Attention()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var in30 = today.AddDays(30);
+        var noMfa = _users.Count(u => u.Status == UserStatus.Active && !u.MfaEnabled);
+        var expiring = _users.Count(u => u.AccountExpiry >= today && u.AccountExpiry <= in30);
+        var tempRoles = _users.Sum(u => u.Roles.Count(r => r.ValidTo >= today && r.ValidTo <= in30));
+        var open = _exceptions.Count(e => !e.Resolved);
+        AttentionItem Item(string label, int value, bool bad, string href) =>
+            new(label, value, value == 0 ? Color.Success : bad ? Color.Error : Color.Warning, value == 0 ? "✓" : bad ? "✕" : "!", href);
+        yield return Item("Active users without MFA", noMfa, false, "users");
+        yield return Item("Locked accounts", _locked, true, "users");
+        yield return Item("Accounts expiring in 30 days", expiring, false, "users");
+        yield return Item("Temporary roles ending in 30 days", tempRoles, false, "users");
+        yield return Item("Unresolved exceptions", open, true, "exceptions");
+    }
+
+    private static string Greeting()
+    {
+        var hour = DateTime.Now.Hour;
+        return hour >= 17 ? "Good evening" : hour >= 12 ? "Good afternoon" : "Good morning";
+    }
+    private static int Pct(int n, int total) => total == 0 ? 0 : (int)Math.Round(n * 100.0 / total);
+    private static string Width(int n, int max) => FormattableString.Invariant($"{n * 100.0 / max:0.##}%");
+}

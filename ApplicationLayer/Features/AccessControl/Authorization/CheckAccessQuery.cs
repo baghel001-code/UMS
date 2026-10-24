@@ -62,3 +62,52 @@ namespace ApplicationLayer.Features.AccessControl.Authorization
         }
     }
 }
+
+namespace ApplicationLayer.Features.AccessControl.Authorization
+{
+    public record WeekCellDto(Weekday Day, int Hour, DateTime At, bool Allowed, string Reason);
+
+    /// <summary>
+    /// Evaluates the same request at hh:30 for every hour of the week containing Env.DateTime (Mon–Sun),
+    /// so the admin can see when access is allowed. Nothing is logged.
+    /// </summary>
+    public record CheckAccessWeekQuery(Guid TenantId, AccessRequestDto Request) : IRequest<List<WeekCellDto>>;
+
+    public class CheckAccessWeekQueryHandler : IRequestHandler<CheckAccessWeekQuery, List<WeekCellDto>>
+    {
+        private readonly IAccessContextProvider _context;
+        private readonly IUserAccountRepository _users;
+        private readonly TimeProvider _time;
+
+        public CheckAccessWeekQueryHandler(IAccessContextProvider context, IUserAccountRepository users, TimeProvider time)
+        {
+            _context = context;
+            _users = users;
+            _time = time;
+        }
+
+        public async Task<List<WeekCellDto>> Handle(CheckAccessWeekQuery query, CancellationToken ct)
+        {
+            var dto = query.Request;
+            User? user = dto.UserId is { } id ? await _users.GetAsync(id, ct)
+                : !string.IsNullOrWhiteSpace(dto.EmpCode) ? await _users.GetByEmpCodeAsync(dto.EmpCode, ct) : null;
+            if (user is null || user.TenantId != query.TenantId)
+                throw new NotFoundException("User", (object?)dto.UserId ?? dto.EmpCode ?? "(none)");
+
+            var data = await _context.LoadAsync(query.TenantId, ct);
+            var anchor = (dto.Env?.DateTime ?? LocalClock.Now(_time)).Date;
+            var monday = anchor.AddDays(-(((int)anchor.DayOfWeek + 6) % 7));
+            var cells = new List<WeekCellDto>(168);
+            for (var d = 0; d < 7; d++)
+                for (var h = 0; h < 24; h++)
+                {
+                    var at = monday.AddDays(d).AddHours(h).AddMinutes(30);
+                    var env = new AccessEnvironment(at, dto.Env?.Ip ?? "", dto.Env?.Network ?? "Office LAN", dto.Env?.Device ?? "Managed", dto.Env?.Channel ?? "Web");
+                    var decision = AccessDecisionService.Decide(new AccessRequest(user.Id, dto.App.ToUpperInvariant(), dto.Module.ToUpperInvariant(),
+                        dto.Resource.ToUpperInvariant(), dto.Action, dto.ResourceAttributes ?? new Dictionary<string, string>(), env), data);
+                    cells.Add(new WeekCellDto(ScheduleEvaluator.WeekdayOf(at), h, at, decision.Allowed, decision.Reason));
+                }
+            return cells;
+        }
+    }
+}

@@ -85,6 +85,9 @@ namespace ApplicationLayer.Features.AccessControl.Policies
             await _policies.SaveAsync(policy, ct);
 
             var after = policy.ToDto(schedules);
+            if (before != null && JsonSerializer.Serialize(before) == JsonSerializer.Serialize(after))
+                return Result<PolicyDto>.Success(after); // nothing changed: no audit entry
+
             string summary;
             if (existing is null) summary = $"Created policy '{policy.Name}' ({policy.Effect})";
             // only the Active switch changed (records holding lists compare by reference, so compare as JSON)

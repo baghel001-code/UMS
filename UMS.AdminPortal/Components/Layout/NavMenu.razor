@@ -1,0 +1,46 @@
+<MudNavMenu Class="ums-nav">
+    @foreach (var group in Groups)
+    {
+        <div class="ums-nav-group">@group.Title</div>
+        @foreach (var item in group.Items)
+        {
+            <MudNavLink Href="@item.Href" Match="@(item.Href == "" ? NavLinkMatch.All : NavLinkMatch.Prefix)" Icon="@item.Icon">@item.Title</MudNavLink>
+        }
+    }
+</MudNavMenu>
+
+@code {
+    public record Item(string Href, string Title, string Icon);
+    public record Group(string Title, Item[] Items);
+
+    public static readonly Group[] Groups =
+    {
+        new("Overview", new[] { new Item("", "Dashboard", Icons.Material.Filled.SpaceDashboard) }),
+        new("Access control", new[]
+        {
+            new Item("applications", "Applications & Modules", Icons.Material.Filled.Apps),
+            new Item("users", "Users", Icons.Material.Filled.People),
+            new Item("roles", "Roles & Permissions", Icons.Material.Filled.Shield),
+            new Item("policies", "ABAC Policies", Icons.Material.Filled.Policy),
+            new Item("schedules", "Office Hours & Holidays", Icons.Material.Filled.Schedule),
+            new Item("simulator", "Access Simulator", Icons.Material.Filled.PlayCircle),
+        }),
+        new("Monitoring", new[]
+        {
+            new Item("audit", "Audit Trail", Icons.Material.Filled.History),
+            new Item("actions", "User Action Trail", Icons.Material.Filled.Route),
+            new Item("exceptions", "Exception Logs", Icons.Material.Filled.ReportProblem),
+        }),
+        new("Administration", new[]
+        {
+            new Item("tenants", "Tenants", Icons.Material.Filled.Business),
+            new Item("settings", "Security Settings", Icons.Material.Filled.Settings),
+        }),
+    };
+
+    public static string TitleFor(string relativePath)
+    {
+        var path = relativePath.Split('?', '#')[0];
+        return Groups.SelectMany(g => g.Items).FirstOrDefault(i => i.Href != "" && path.StartsWith(i.Href))?.Title ?? "Dashboard";
+    }
+}

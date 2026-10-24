@@ -86,7 +86,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
-// the admin panel (admin-panel/) runs on another origin during development
+// browser-based clients on other origins (the Blazor Server admin portal calls the API server-side and needs no CORS)
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options => options.AddPolicy("AdminPanel", policy =>
     policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));

@@ -1,0 +1,48 @@
+@* Choose a role with optional scope (resource-based restriction) and validity dates (temporary access). Returns an AssignmentEdit. *@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudSelect T="Guid" @bind-Value="_roleId" Label="Role" Variant="Variant.Outlined">
+                @foreach (var r in Roles.Where(r => r.IsActive && !Exclude.Contains(r.Id)))
+                {
+                    <MudSelectItem T="Guid" Value="r.Id">@r.Name (@r.Code)</MudSelectItem>
+                }
+            </MudSelect>
+            @if (Roles.FirstOrDefault(r => r.Id == _roleId) is { } role)
+            {
+                <MudText Typo="Typo.caption" Class="muted">@role.Description</MudText>
+            }
+            <MudStack Row="true" Spacing="2">
+                <MudDatePicker @bind-Date="_from" Label="Valid from (optional)" HelperText="Blank = immediately" Variant="Variant.Outlined" Clearable="true" DateFormat="yyyy-MM-dd" />
+                <MudDatePicker @bind-Date="_to" Label="Valid to (optional)" HelperText="Temporary / acting access" Variant="Variant.Outlined" Clearable="true" DateFormat="yyyy-MM-dd" />
+            </MudStack>
+            <div>
+                <MudText Typo="Typo.subtitle2">Scope (resource-based restriction)</MudText>
+                <MudText Typo="Typo.caption" Class="muted">e.g. store = S045,S046 → the role only works on records whose "store" attribute is S045 or S046.</MudText>
+                <div class="mt-2"><KeyValueEditor @bind-Value="_scope" KeyPlaceholder="store / region / dc" ValuePlaceholder="S045,S046" /></div>
+            </div>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!Valid)" OnClick="Assign">Assign</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<RoleDto> Roles { get; set; } = new();
+    [Parameter] public HashSet<Guid> Exclude { get; set; } = new();
+
+    private Guid _roleId;
+    private DateTime? _from;
+    private DateTime? _to;
+    private Dictionary<string, string> _scope = new();
+
+    private bool Valid => _roleId != Guid.Empty && (_from is null || _to is null || _to >= _from);
+
+    protected override void OnInitialized() =>
+        _roleId = Roles.FirstOrDefault(r => r.IsActive && !Exclude.Contains(r.Id))?.Id ?? Guid.Empty;
+
+    private void Assign() => MudDialog.Close(DialogResult.Ok(new AssignmentEdit { RoleId = _roleId, ValidFrom = _from, ValidTo = _to, Scope = _scope }));
+}

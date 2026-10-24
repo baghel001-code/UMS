@@ -7,7 +7,7 @@ using Infrastructure.Persistence;
 
 namespace UMS.Tests
 {
-    // Same scenarios as admin-panel/src/engine/pdp.test.ts so the API and the simulator stay in step.
+    // Layer-by-layer scenarios for the decision engine (the admin portal's Access Simulator calls the same engine through the API).
     public class AccessDecisionServiceTests
     {
         private static readonly DemoSeed Seed = DemoSeed.Create(new DateTime(2026, 10, 24, 11, 0, 0));

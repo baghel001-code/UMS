@@ -1,0 +1,127 @@
+@inject UmsApiClient Api
+@inject Ui Ui
+@inject IDialogService Dialogs
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.Code" Label="Code (used in permission keys)" Variant="Variant.Outlined" Placeholder="POS" /></MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.Name" Label="Name" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect @bind-Value="Model.Type" Label="Type" Variant="Variant.Outlined">
+                    <MudSelectItem Value="AppType.InHouse">In-house</MudSelectItem>
+                    <MudSelectItem Value="AppType.ThirdParty">Third-party</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.Vendor" Label="Vendor / developed by" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.OwnerDept" Label="Business owner (department)" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-center"><MudSwitch @bind-Value="Model.IsActive" Color="Color.Success" Label="Active" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="Model.Description" Label="Description" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption" Class="muted">Enabled for tenants</MudText>
+                <MudStack Row="true" Wrap="Wrap.Wrap">
+                    @foreach (var t in Tenants)
+                    {
+                        <MudCheckBox T="bool" Value="Model.TenantIds.Contains(t.Id)" ValueChanged="on => Toggle(Model.TenantIds, t.Id, on)" Label="@t.Name" Color="Color.Primary" />
+                    }
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+
+        <MudText Typo="Typo.h6" Class="mt-4">Modules → Resources → Actions</MudText>
+        <MudText Typo="Typo.caption" Class="muted">Each ticked action becomes a grantable permission <span class="mono">@(string.IsNullOrEmpty(Model.Code) ? "APP" : Model.Code.ToUpperInvariant()).MODULE.RESOURCE.ACTION</span>.</MudText>
+
+        @foreach (var m in Model.Modules)
+        {
+            <MudPaper Class="ums-card mt-3" Elevation="0">
+                <div class="ums-card-head">
+                    <MudStack Row="true" Spacing="2" Style="flex:1">
+                        <MudTextField @bind-Value="m.Code" Label="Module code" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:180px" />
+                        <MudTextField @bind-Value="m.Name" Label="Module name" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudStack>
+                    <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="() => Model.Modules.Remove(m)">Remove module</MudButton>
+                </div>
+                <MudSimpleTable Dense="true" Elevation="0" Class="ums-matrix">
+                    <thead>
+                        <tr>
+                            <th>Resource</th>
+                            @foreach (var a in AllActions)
+                            {
+                                <th>@a</th>
+                            }
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in m.Resources)
+                        {
+                            <tr>
+                                <td>
+                                    <MudStack Row="true" Spacing="1">
+                                        <MudTextField @bind-Value="r.Code" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono" Style="min-width:150px" />
+                                        <MudTextField @bind-Value="r.Name" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px" />
+                                    </MudStack>
+                                </td>
+                                @foreach (var a in AllActions)
+                                {
+                                    <td><MudCheckBox T="bool" Value="r.Actions.Contains(a)" ValueChanged="on => Toggle(r.Actions, a, on)" Color="Color.Primary" Size="Size.Small" /></td>
+                                }
+                                <td><MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small" OnClick="() => m.Resources.Remove(r)" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <div class="pa-3">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="() => AddResource(m)">Add resource</MudButton>
+                </div>
+            </MudPaper>
+        }
+        <MudButton Class="mt-3" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddModule">Add module</MudButton>
+    </DialogContent>
+    <DialogActions>
+        @if (!IsNew)
+        {
+            <MudButton Color="Color.Error" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public ApplicationEdit Model { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public List<TenantDto> Tenants { get; set; } = new();
+
+    private static readonly AccessAction[] AllActions = Enum.GetValues<AccessAction>();
+    private bool _busy;
+
+    private static void AddResource(ModuleEdit m) => m.Resources.Add(new ResourceEdit { Code = $"RESOURCE_{m.Resources.Count + 1}", Name = "New resource" });
+    private void AddModule() => Model.Modules.Add(new ModuleEdit { Code = $"MODULE_{Model.Modules.Count + 1}", Name = "New module" });
+
+    private static void Toggle<T>(HashSet<T> set, T item, bool on)
+    {
+        if (on) set.Add(item);
+        else set.Remove(item);
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        var saved = await Ui.Run(() => Api.SaveApplicationAsync(Model.ToDto()));
+        _busy = false;
+        if (saved is null) return;
+        Ui.Ok($"Saved {saved.Name}");
+        MudDialog.Close(DialogResult.Ok(saved));
+    }
+
+    private async Task DeleteAsync()
+    {
+        var confirm = await Dialogs.ShowMessageBox("Delete application",
+            $"Delete {Model.Name}? Roles referencing {Model.Code}.* will no longer grant anything.", yesText: "Delete", cancelText: "Cancel");
+        if (confirm != true) return;
+        if (await Ui.Run(() => Api.DeleteApplicationAsync(Model.Id))) MudDialog.Close(DialogResult.Ok(true));
+    }
+}

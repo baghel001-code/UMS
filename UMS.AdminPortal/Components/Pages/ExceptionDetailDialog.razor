@@ -1,0 +1,29 @@
+@inject UmsApiClient Api
+@inject Ui Ui
+
+<MudDialog>
+    <DialogContent>
+        <MudText><b>@Log.Message</b></MudText>
+        <MudText Typo="Typo.caption" Class="muted d-block my-2">@Fmt.DateTime(Log.Timestamp) · @Log.RequestPath · @Log.Ip · user: @(Log.UserName ?? "anonymous")</MudText>
+        <pre class="ums-json">@Log.StackTrace</pre>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Close</MudButton>
+        @if (!Log.Resolved)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResolveAsync">Mark resolved</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public ExceptionLogDto Log { get; set; } = default!;
+
+    private async Task ResolveAsync()
+    {
+        if (await Ui.Run(() => Api.ResolveExceptionAsync(Log.Id)) is null) return;
+        Ui.Ok("Marked resolved");
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+}

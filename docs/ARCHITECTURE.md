@@ -1,6 +1,6 @@
 # VMM User Management System – Access Control Architecture
 
-This document explains the access model behind the admin panel (`admin-panel/`). It also defines the backend
+This document explains the access model behind the admin portal (`UMS.AdminPortal`, Blazor Server + MudBlazor). It also defines the backend
 contract (database tables + REST API) that the ASP.NET Core UMS API must implement. It follows the two reference
 documents: *Architecture document for user management and authentication with RBAC, ABAC, policy, multi-tenant,
 audit trail and exception logging*, and *User Management System for Vishal Mega Mart*.
@@ -26,10 +26,9 @@ The Policy Decision Point (PDP) answers in layers. The first layer that fails de
 **Grant** policies can stand in for a missing RBAC permission in layers 3–6. Example: the approver named on a PO can
 approve it without a procurement role. Restrict and Deny policies still apply after a grant.
 
-The server implementation is `DomainLayer/Services/AccessDecisionService.cs` (tests in
-`Tests/UMS.Tests/AccessDecisionServiceTests.cs`). The admin panel's simulator runs the same algorithm in
-`admin-panel/src/engine/pdp.ts` (tests in `pdp.test.ts`), and both test suites cover the same scenarios.
-When you change one engine, change the other and keep both test suites green.
+The implementation is `DomainLayer/Services/AccessDecisionService.cs` (tests in
+`Tests/UMS.Tests/AccessDecisionServiceTests.cs`). It is the only engine. `POST /api/v1/authorize`, the admin API's
+`RequirePermission` filter and the admin portal's Access Simulator (through the API) all use it, so they always agree.
 
 ### Permission keys
 
@@ -76,7 +75,7 @@ Example: `Restrict PAYROLL.*.*.* WHEN InSchedule(env.now, 'GENERAL')`.
 ## 2. Components
 
 ```
- 50+ apps (in-house & third-party)            Admin panel (this repo, React)
+ 50+ apps (in-house & third-party)            UMS.AdminPortal (Blazor Server)
  ┌──────────────────────────────┐             ┌───────────────────────────┐
  │ PEP: auth middleware / SDK   │             │ Users · Roles · Policies  │
  │  - validates JWT (tenant,sub)│             │ Apps · Schedules · Logs   │
@@ -133,7 +132,7 @@ same engine. Every change writes an `AuditLogs` row with before/after JSON.
 | Users | `GET /users?search=&department=&roleId=&region=&status=`, `GET/PUT /users/{id}`, `POST /users/bulk`, `POST /users/import`, `GET /users/{id}/effective-permissions`, `POST /users/{id}/password` | `UMS.USERS.USER.*` |
 | Policies | `GET /policies`, `PUT/DELETE /policies/{id}` | `UMS.POLICIES.POLICY.*` |
 | Schedules | `GET /schedules`, `PUT/DELETE /schedules/{id}`, `GET/POST /holidays`, `DELETE /holidays/{id}` | `UMS.POLICIES.SCHEDULE.*` |
-| Decision | `POST /authorize` (body `AccessRequestDto`, returns `{allowed, reason, steps[]}`) | `UMS.POLICIES.DECISION.VIEW` |
+| Decision | `POST /authorize` (body `AccessRequestDto`, returns `{allowed, reason, steps[]}`); `POST /authorize/week` (same request for every hour of the week, used by the simulator heat-map) | `UMS.POLICIES.DECISION.VIEW` |
 | Logs | `GET /audit-logs`, `GET /user-actions`, `GET /exceptions`, `PUT /exceptions/{id}/resolve` | `UMS.LOGS.*` |
 
 Errors are RFC 7807 problem responses:

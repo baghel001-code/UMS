@@ -14,10 +14,10 @@ The checks combine:
 
 The system is **multi-tenant** and writes an **audit trail**, a **user action trail** and **exception logs**.
 
-## Solution layout
+## Solution layout (`UMS_Sol.sln`)
 
 ```
-UMS_Sol.sln
+src
 ├── DomainLayer/          Entities (User, Tenant, Application, Role, Policy, Schedule, …), PermissionKey,
 │                         AccessDecisionService (the decision engine), ScheduleEvaluator, ConditionEvaluator
 ├── ApplicationLayer/     MediatR commands/queries under Features/AccessControl/*, DTOs, validators,
@@ -26,74 +26,69 @@ UMS_Sol.sln
 │                         audit/tenant/password/token services, DI (AddAccessControl)
 ├── WebApi/               REST API /api/v1 (Controllers/V1), ExceptionLoggingMiddleware,
 │                         RequirePermission filter (UMS protects itself with its own engine), JWT auth
-├── Tests/UMS.Tests/      xUnit tests: decision engine, schedules, storage formats
-├── database/             001_create_access_control_schema.sql (SQL Server)
-├── admin-panel/          React + TypeScript admin console (prismatic blue / white theme)
-└── docs/ARCHITECTURE.md  Access model, API contract, schema, scaling notes
+└── UMS.AdminPortal/      Blazor Server + MudBlazor admin console (prismatic blue / white theme).
+                          Calls WebApi over HTTP; reuses the ApplicationLayer DTOs.
+tests
+└── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats
+database/                 001_create_access_control_schema.sql (SQL Server)
+docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 ```
 
-## Run it
+## Run it in Visual Studio
 
-### 1. API (in-memory demo data, no database needed)
+1. Open `UMS_Sol.sln`.
+2. In the startup-project dropdown on the toolbar, choose **API + Admin Portal**. This profile comes from
+   `UMS_Sol.slnLaunch` and needs Visual Studio 2022 17.11 or newer.
+   - On older versions, right-click the solution → **Configure Startup Projects…** → **Multiple startup
+     projects**, and set **WebApi** and **UMS.AdminPortal** to *Start*, both using the **http** profile.
+3. Press **F5**.
+   - The API runs at `http://localhost:5125` (Swagger UI at `/`).
+   - The admin portal opens at **`http://localhost:5200`**.
+
+In Development the API uses in-memory demo data (about 300 users, 13 applications, 21 roles and 11 policies in
+the main tenant) and does not require sign-in. Changes are kept until the API stops.
+
+From the command line, run each in its own terminal:
 
 ```bash
-cd WebApi
-dotnet run --launch-profile http          # http://localhost:5125, Swagger UI at /
+dotnet run --project WebApi --launch-profile http
+dotnet run --project UMS.AdminPortal --launch-profile http
+dotnet test                                # 28 xUnit tests
 ```
 
-`appsettings.Development.json` turns on:
-- `Persistence:Provider = InMemory`: about 300 demo users, 13 applications, 21 roles and 11 policies in the main tenant
-- `Security:RequireAuthentication = false`: so the panel works without signing in
-- CORS for the admin panel on ports 5173 and 4173
-
-### 2. Admin panel
-
-```bash
-cd admin-panel
-npm install
-cp .env.example .env.local                # VITE_API_URL=http://localhost:5125
-npm run dev                               # http://localhost:5173
-```
-
-Without `VITE_API_URL` the panel runs on its own demo data kept in the browser.
-
-### 3. Tests
-
-```bash
-dotnet test                               # 28 xUnit tests (engine, schedules, storage formats)
-cd admin-panel && npm test                # 22 Vitest tests (same scenarios as the C# engine)
-```
+The portal finds the API through `UmsApi:BaseUrl` in `UMS.AdminPortal/appsettings.json`.
 
 ### Signing in (secured mode)
 
-Set `Security:RequireAuthentication = true`. The admin panel then shows a sign-in page, and every admin API
-call is checked against the caller's own `UMS.*` permissions: roles plus ABAC policies, like any other application.
+Set `Security:RequireAuthentication = true` in the WebApi settings. The portal then shows a sign-in page, and
+every admin call is checked against the caller's own `UMS.*` permissions (roles plus ABAC policies), like any
+other application.
 
 In development, the seeded UMS administrator signs in as `ankit.saxena@vmm.example`. The password is
-`Persistence:DemoAdminPassword` from `appsettings.Development.json`. Change it, and never use it outside
-development. Administrators can set passwords for other users from the Users page.
+`Persistence:DemoAdminPassword` from `WebApi/appsettings.Development.json`. Change it, and never use it outside
+development. Administrators can set passwords for other users in the user dialog.
 
 ### SQL Server
 
 1. Create a database and run `database/001_create_access_control_schema.sql`.
-2. In configuration set:
+2. In the WebApi configuration set:
    - `Persistence:Provider = SqlServer`
    - `ConnectionStrings:Default`
    - `Jwt:Secret` (at least 32 characters; use user-secrets or an environment variable, not appsettings)
 3. Optionally set `Persistence:SeedDemoData = true` and `Persistence:DemoAdminPassword` to load the demo data
    into an empty database on first start.
 
-## Admin panel
+## Admin portal pages
 
 | Page | What you can do |
 |------|-----------------|
 | Dashboard | Welcome banner with quick actions, key figures, the 7 decision steps, access decisions per app, users by status/department, items needing attention, recent changes |
 | Applications & Modules | Register in-house and third-party apps, enable them per tenant, define modules → resources → allowed actions |
 | Users | Search and filter; bulk activate, lock or assign a role; CSV import/export; per-user roles (with scope and validity dates), ABAC attributes, effective access, activity; set password |
-| Roles & Permissions | Permission matrix per application (with wildcards) and a role × application coverage matrix |
-| ABAC Policies | Visual builder: Restrict / Deny / Grant, target, conditions on `user.*`, `resource.*`, `env.*`, templates, live rule text |
+| Roles & Permissions | Permission matrix per application (with wildcards), role × application coverage matrix, members, raw keys |
+| ABAC Policies | Visual builder: Restrict / Deny / Grant, target, conditions on `user.*`, `resource.*`, `env.*`, templates, live rule preview |
 | Office Hours & Holidays | Weekly schedules (overnight shifts supported) and a regional holiday calendar |
-| Access Simulator | Pick user, app/module/resource/action, record attributes and time/network/device. See PERMIT/DENY step by step and a weekly heat-map |
+| Access Simulator | Pick user, app/module/resource/action, record attributes and time/network/device. The API returns PERMIT/DENY step by step, plus a weekly heat-map |
 | Audit Trail · User Action Trail · Exception Logs | Before/after diffs, every allow/deny decision, captured exceptions |
 | Tenants · Security Settings | Tenant isolation; password, lockout, MFA and token policy |
 

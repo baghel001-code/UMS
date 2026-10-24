@@ -1,0 +1,81 @@
+@page "/settings"
+@inherits TenantPage
+@inject TenantState Tenant
+
+<PageTitle>Security Settings · VMM UMS</PageTitle>
+
+<PageHeader Title="Security Settings" Subtitle="@($"Authentication and session policy for {Tenant.Current?.Name}.")">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync" Disabled="@(_s is null)">Save settings</MudButton>
+    </Actions>
+</PageHeader>
+
+@if (_s is not null)
+{
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Passwords, lockout &amp; tokens</MudText></div>
+                <div class="ums-card-body">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.PasswordMinLength" Label="Minimum password length" Variant="Variant.Outlined" Min="8" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.PasswordExpiryDays" Label="Password expiry (days)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.MaxFailedLogins" Label="Failed logins before lockout" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.LockoutMinutes" Label="Lockout duration (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.SessionTimeoutMinutes" Label="Idle session timeout (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.JwtExpiryMinutes" Label="Access token lifetime (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.RefreshTokenDays" Label="Refresh token lifetime (days)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                    </MudGrid>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Multi-factor &amp; network</MudText></div>
+                <div class="ums-card-body">
+                    <MudSwitch @bind-Value="_s.MfaRequiredForAdmins" Color="Color.Primary" Label="Require MFA for administrators" />
+                    <MudSwitch @bind-Value="_s.MfaRequiredOutsideOffice" Color="Color.Primary" Label="Step-up MFA when outside the office network" />
+                    <MudTextField @bind-Value="_s.AllowedIpRanges" Label="Trusted IP ranges (office network)" Lines="3" Variant="Variant.Outlined" Class="mt-3"
+                                  HelperText="Comma separated CIDR blocks; requests from these ranges count as env.network = Office LAN" />
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private sealed class SettingsEdit
+    {
+        public int PasswordMinLength { get; set; }
+        public int PasswordExpiryDays { get; set; }
+        public int MaxFailedLogins { get; set; }
+        public int LockoutMinutes { get; set; }
+        public int SessionTimeoutMinutes { get; set; }
+        public bool MfaRequiredForAdmins { get; set; }
+        public bool MfaRequiredOutsideOffice { get; set; }
+        public int JwtExpiryMinutes { get; set; }
+        public int RefreshTokenDays { get; set; }
+        public string AllowedIpRanges { get; set; } = "";
+    }
+
+    private SettingsEdit? _s;
+
+    protected override async Task LoadAsync()
+    {
+        var s = await Api.SettingsAsync();
+        _s = new SettingsEdit
+        {
+            PasswordMinLength = s.PasswordMinLength, PasswordExpiryDays = s.PasswordExpiryDays, MaxFailedLogins = s.MaxFailedLogins, LockoutMinutes = s.LockoutMinutes,
+            SessionTimeoutMinutes = s.SessionTimeoutMinutes, MfaRequiredForAdmins = s.MfaRequiredForAdmins, MfaRequiredOutsideOffice = s.MfaRequiredOutsideOffice,
+            JwtExpiryMinutes = s.JwtExpiryMinutes, RefreshTokenDays = s.RefreshTokenDays, AllowedIpRanges = s.AllowedIpRanges,
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        var s = _s!;
+        var settings = new DomainLayer.Entities.SecuritySettings(s.PasswordMinLength, s.PasswordExpiryDays, s.MaxFailedLogins, s.LockoutMinutes, s.SessionTimeoutMinutes,
+            s.MfaRequiredForAdmins, s.MfaRequiredOutsideOffice, s.JwtExpiryMinutes, s.RefreshTokenDays, s.AllowedIpRanges);
+        if (await Ui.Run(() => Api.SaveSettingsAsync(settings)) is not null) Ui.Ok("Settings saved");
+    }
+}

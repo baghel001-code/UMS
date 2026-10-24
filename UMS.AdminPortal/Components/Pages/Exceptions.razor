@@ -1,0 +1,53 @@
+@page "/exceptions"
+@inherits TenantPage
+@inject IDialogService Dialogs
+
+<PageTitle>Exception Logs · VMM UMS</PageTitle>
+
+<PageHeader Title="Exception Logs" Subtitle="Unhandled exceptions captured by the exception-logging middleware, with request context and stack trace." />
+
+<MudPaper Class="ums-card" Elevation="0">
+    <MudToolBar Gutters="true" Class="gap-3 py-2" Style="height:auto;flex-wrap:wrap">
+        <MudSelect T="ExceptionSeverity?" @bind-Value="_severity" Label="Severity" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="max-width:180px">
+            @foreach (var s in Enum.GetValues<ExceptionSeverity>())
+            {
+                <MudSelectItem T="ExceptionSeverity?" Value="s">@s</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSwitch @bind-Value="_onlyOpen" Color="Color.Primary" Label="Unresolved only" />
+    </MudToolBar>
+    <MudTable Items="Rows" Hover="true" Dense="true" Class="ums-table" Elevation="0" Loading="Loading" RowsPerPage="25"
+              OnRowClick="(TableRowClickEventArgs<ExceptionLogDto> e) => ShowAsync(e.Item)">
+        <HeaderContent><MudTh>Time</MudTh><MudTh>App</MudTh><MudTh>Severity</MudTh><MudTh>Message</MudTh><MudTh>Request</MudTh><MudTh>User</MudTh><MudTh>Status</MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd Style="white-space:nowrap">@Fmt.DateTime(context.Timestamp)</MudTd>
+            <MudTd>@context.App</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.Severity == ExceptionSeverity.Warning ? Color.Warning : Color.Error)">@context.Severity</MudChip></MudTd>
+            <MudTd>@context.Message</MudTd>
+            <MudTd Class="mono">@context.RequestPath</MudTd>
+            <MudTd>@(context.UserName ?? "—")</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.Resolved ? Color.Success : Color.Warning)">@(context.Resolved ? "Resolved" : "Open")</MudChip></MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-6 muted">No exceptions 🎉</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<ExceptionLogDto> _logs = new();
+    private ExceptionSeverity? _severity;
+    private bool _onlyOpen = true;
+
+    private IEnumerable<ExceptionLogDto> Rows => _logs
+        .Where(e => (_severity is null || e.Severity == _severity) && (!_onlyOpen || !e.Resolved))
+        .OrderByDescending(e => e.Timestamp);
+
+    protected override async Task LoadAsync() => _logs = await Api.ExceptionsAsync(5000);
+
+    private async Task ShowAsync(ExceptionLogDto log)
+    {
+        var dialog = await Dialogs.ShowAsync<ExceptionDetailDialog>($"{log.App} · {log.Severity}",
+            new DialogParameters<ExceptionDetailDialog> { { x => x.Log, log } }, new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true });
+        if (await dialog.Result is { Canceled: false }) await ReloadAsync();
+    }
+}

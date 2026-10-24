@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace ApplicationLayer.Features.AccessControl.DTOs
 {
-    // Shapes exchanged with the admin panel (admin-panel/src/types.ts). JSON is camelCase.
+    // API contract used by applications and the UMS.AdminPortal (Blazor). JSON is camelCase, enums as names.
 
     public record TenantDto(Guid Id, string Code, string Name, bool IsActive, DateOnly CreatedOn);
 

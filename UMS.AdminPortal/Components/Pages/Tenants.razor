@@ -1,0 +1,75 @@
+@page "/tenants"
+@inherits TenantPage
+@inject TenantState Tenant
+
+<PageTitle>Tenants · VMM UMS</PageTitle>
+
+<PageHeader Title="Tenants" Subtitle="Isolated business units / partner networks. Users, roles, policies, schedules and logs are always scoped to a tenant.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="New">New tenant</MudButton>
+    </Actions>
+</PageHeader>
+
+@if (_editing is not null)
+{
+    <MudPaper Class="ums-card mb-4" Elevation="0">
+        <div class="ums-card-head"><MudText Typo="Typo.h6">@(_isNew ? "New tenant" : $"Edit {_editing.Name}")</MudText></div>
+        <div class="ums-card-body">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="4"><MudTextField @bind-Value="_editing.Code" Label="Code" Variant="Variant.Outlined" /></MudItem>
+                <MudItem xs="12" sm="5"><MudTextField @bind-Value="_editing.Name" Label="Name" Variant="Variant.Outlined" /></MudItem>
+                <MudItem xs="12" sm="3" Class="d-flex align-center"><MudSwitch @bind-Value="_editing.IsActive" Color="Color.Success" Label="Active" /></MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="muted">Inactive tenants deny every request.</MudText>
+            <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-3">
+                <MudButton OnClick="() => _editing = null">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync">Save</MudButton>
+            </MudStack>
+        </div>
+    </MudPaper>
+}
+
+<MudPaper Class="ums-card" Elevation="0">
+    <MudTable Items="Tenant.Tenants" Hover="true" Class="ums-table" Elevation="0">
+        <HeaderContent><MudTh>Tenant</MudTh><MudTh>Created</MudTh><MudTh>Status</MudTh><MudTh></MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd><b>@context.Name</b><div class="mono muted">@context.Code</div></MudTd>
+            <MudTd>@Fmt.Date(context.CreatedOn)</MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.IsActive ? Color.Success : Color.Warning)">@(context.IsActive ? "Active" : "Inactive")</MudChip></MudTd>
+            <MudTd Style="text-align:right">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => Tenant.Select(context.Id)" Disabled="@(context.Id == TenantId)">Switch to</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="() => Edit(context)">Edit</MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private sealed class TenantEdit
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        public bool IsActive { get; set; } = true;
+        public DateOnly CreatedOn { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    }
+
+    private TenantEdit? _editing;
+    private bool _isNew;
+
+    protected override Task LoadAsync() => Task.CompletedTask;
+
+    private void New() => (_editing, _isNew) = (new TenantEdit(), true);
+    private void Edit(TenantDto t) => (_editing, _isNew) = (new TenantEdit { Id = t.Id, Code = t.Code, Name = t.Name, IsActive = t.IsActive, CreatedOn = t.CreatedOn }, false);
+
+    private async Task SaveAsync()
+    {
+        var e = _editing!;
+        var saved = await Ui.Run(() => Api.SaveTenantAsync(new TenantDto(e.Id, e.Code, e.Name, e.IsActive, e.CreatedOn)));
+        if (saved is null) return;
+        Ui.Ok($"Saved {saved.Name}");
+        _editing = null;
+        var tenants = await Ui.Run(() => Api.TenantsAsync());
+        if (tenants is not null) Tenant.SetTenants(tenants, TenantId);
+    }
+}

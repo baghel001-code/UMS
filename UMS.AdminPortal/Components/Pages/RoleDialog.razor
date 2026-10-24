@@ -1,0 +1,213 @@
+@inject UmsApiClient Api
+@inject Ui Ui
+@inject IDialogService Dialogs
+@using DomainLayer.ValueObjects
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.Code" Label="Code" Variant="Variant.Outlined" Disabled="@(Model.IsSystem && !IsNew)" /></MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.Name" Label="Name" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="Guid?" @bind-Value="Model.AppId" Label="Belongs to" Variant="Variant.Outlined">
+                    <MudSelectItem T="Guid?" Value="null">Cross-application</MudSelectItem>
+                    @foreach (var a in Applications)
+                    {
+                        <MudSelectItem T="Guid?" Value="a.Id">@a.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="9"><MudTextField @bind-Value="Model.Description" Label="Description" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="3" Class="d-flex align-center"><MudSwitch @bind-Value="Model.IsActive" Color="Color.Success" Label="Active" /></MudItem>
+        </MudGrid>
+
+        <MudTabs Elevation="0" PanelClass="pt-3" Class="mt-3">
+            <MudTabPanel Text="Permissions">
+                <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-3">
+                    <MudSelect T="string" @bind-Value="_appCode" Label="Application" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:300px">
+                        @foreach (var a in Applications)
+                        {
+                            <MudSelectItem T="string" Value="a.Code">@a.Name (@Roles.Coverage(Model.ToDto(), a))</MudSelectItem>
+                        }
+                    </MudSelect>
+                    @if (App is { } app)
+                    {
+                        var all = $"{app.Code}.*.*.*";
+                        <MudCheckBox T="bool" Value="Has(all)" ValueChanged="on => Toggle(all, on)" Color="Color.Primary"
+                                     Label="@($"Full access to {app.Name} ({all})")" />
+                    }
+                </MudStack>
+                @if (App is { } a2)
+                {
+                    <MudSimpleTable Dense="true" Elevation="0" Bordered="true" Class="ums-matrix">
+                        <thead>
+                            <tr>
+                                <th>Module / Resource</th>
+                                @foreach (var act in AllActions)
+                                {
+                                    <th>@act</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in a2.Modules)
+                            {
+                                var modKey = PermissionKey.Of(a2.Code, m.Code, "*", "*");
+                                <tr class="mod">
+                                    <td>
+                                        <MudCheckBox T="bool" Value="Covered(modKey)" ValueChanged="on => Toggle(modKey, on)" Disabled="@(Covered(modKey) && !Has(modKey))"
+                                                     Color="Color.Primary" Size="Size.Small" Label="@($"{m.Name}  ({m.Code}.*.*)")" />
+                                    </td>
+                                    @foreach (var act in AllActions)
+                                    {
+                                        var k = PermissionKey.Of(a2.Code, m.Code, "*", act.ToString());
+                                        if (!m.Resources.Any(r => r.Actions.Contains(act)))
+                                        {
+                                            <td class="na"></td>
+                                            continue;
+                                        }
+                                        <td>
+                                            <MudTooltip Text="@($"All {m.Name} resources: {act}")">
+                                                <MudCheckBox T="bool" Value="Covered(k)" ValueChanged="on => Toggle(k, on)" Disabled="@(Covered(k) && !Has(k))"
+                                                             Color="@(Has(k) ? Color.Primary : Color.Info)" Size="Size.Small" />
+                                            </MudTooltip>
+                                        </td>
+                                    }
+                                </tr>
+                                @foreach (var r in m.Resources)
+                                {
+                                    <tr>
+                                        <td style="padding-left:36px !important">@r.Name <span class="mono muted">@r.Code</span></td>
+                                        @foreach (var act in AllActions)
+                                        {
+                                            var k = PermissionKey.Of(a2.Code, m.Code, r.Code, act.ToString());
+                                            if (!r.Actions.Contains(act))
+                                            {
+                                                <td class="na"></td>
+                                                continue;
+                                            }
+                                            <td>
+                                                <MudTooltip Text="@Tip(k)">
+                                                    <MudCheckBox T="bool" Value="Covered(k)" ValueChanged="on => Toggle(k, on)" Disabled="@(Covered(k) && !Has(k))"
+                                                                 Color="@(Has(k) ? Color.Primary : Color.Info)" Size="Size.Small" />
+                                                </MudTooltip>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudText Typo="Typo.caption" Class="muted">Greyed ticks are inherited from a wildcard grant (module / app / cross-app). Untick the wildcard to edit them one by one.</MudText>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Members ({Members.Count})")">
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <thead><tr><th>User</th><th>Location</th><th>Scope</th><th>Validity</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in Members.Take(200))
+                        {
+                            var a = u.Roles.First(x => x.RoleId == Model.Id);
+                            <tr>
+                                <td>@u.FullName <span class="muted">@u.EmpCode</span></td>
+                                <td>@u.Location</td>
+                                <td>@string.Join(", ", a.Scope.Select(kv => $"{kv.Key}={kv.Value}"))</td>
+                                <td>@(a.ValidFrom is null && a.ValidTo is null ? "Permanent" : $"{a.ValidFrom} → {a.ValidTo}")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (Members.Count == 0)
+                {
+                    <MudText Class="pa-4 muted">No users hold this role. Assign it from the Users page.</MudText>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Advanced">
+                <MudText Typo="Typo.caption" Class="muted">Raw permission keys. Use * in any segment, e.g. *.*.*.VIEW for read-only on everything.</MudText>
+                <div class="my-3">
+                    @foreach (var p in Model.Permissions.ToList())
+                    {
+                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Class="mono" OnClose="() => Model.Permissions.Remove(p)">@p</MudChip>
+                    }
+                </div>
+                <MudStack Row="true" Spacing="2">
+                    <MudTextField @bind-Value="_rawKey" Placeholder="APP.MODULE.RESOURCE.ACTION" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono" Immediate="true" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="AddRawKey">Add key</MudButton>
+                </MudStack>
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        @if (!IsNew && !Model.IsSystem)
+        {
+            <MudButton Color="Color.Error" Disabled="@(Members.Count > 0)" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save role</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public RoleEdit Model { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public List<ApplicationDto> Applications { get; set; } = new();
+    [Parameter] public List<UserAccountDto> Members { get; set; } = new();
+
+    private static readonly AccessAction[] AllActions = Enum.GetValues<AccessAction>();
+    private string? _appCode;
+    private string _rawKey = "";
+    private bool _busy;
+
+    private ApplicationDto? App => Applications.FirstOrDefault(a => a.Code == _appCode);
+
+    protected override void OnInitialized()
+    {
+        var dto = Model.ToDto();
+        _appCode = (Applications.FirstOrDefault(a => a.Id == Model.AppId)
+                    ?? Applications.FirstOrDefault(a => Roles.Coverage(dto, a) != "None")
+                    ?? Applications.FirstOrDefault())?.Code;
+    }
+
+    private bool Has(string key) => Model.Permissions.Any(p => string.Equals(p, key, StringComparison.OrdinalIgnoreCase));
+    private bool Covered(string key) => Model.Permissions.Any(p => PermissionKey.Covers(p, key));
+    private string Tip(string key) => Covered(key) && !Has(key) ? $"Granted via {Model.Permissions.First(p => PermissionKey.Covers(p, key))}" : key;
+
+    private void Toggle(string key, bool on)
+    {
+        if (on && !Has(key)) Model.Permissions.Add(key);
+        if (!on) Model.Permissions.RemoveAll(p => string.Equals(p, key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void AddRawKey()
+    {
+        try
+        {
+            Toggle(PermissionKey.Create(_rawKey).Value, true);
+            _rawKey = "";
+        }
+        catch (DomainLayer.Exceptions.DomainException ex)
+        {
+            Ui.Error(ex.Message);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        var saved = await Ui.Run(() => Api.SaveRoleAsync(Model.ToDto()));
+        _busy = false;
+        if (saved is null) return;
+        Ui.Ok($"Saved {saved.Name}");
+        MudDialog.Close(DialogResult.Ok(saved));
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await Dialogs.ShowMessageBox("Delete role", $"Delete role {Model.Code}?", yesText: "Delete", cancelText: "Cancel") != true) return;
+        if (await Ui.Run(() => Api.DeleteRoleAsync(Model.Id))) MudDialog.Close(DialogResult.Ok(true));
+    }
+}

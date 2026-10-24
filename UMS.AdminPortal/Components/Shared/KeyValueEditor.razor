@@ -1,0 +1,50 @@
+@* Edits a string dictionary: ABAC attributes, role scopes, resource attributes. *@
+<MudStack Spacing="1">
+    @foreach (var key in Value.Keys.ToList())
+    {
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            <MudTextField T="string" Value="key" ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono" />
+            <MudTextField T="string" Value="Value[key]" ValueChanged="v => Set(key, v)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small" OnClick="() => Remove(key)" aria-label="@($"Remove {key}")" />
+        </MudStack>
+    }
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudTextField @bind-Value="_key" Placeholder="@KeyPlaceholder" Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyUp="Enter" Immediate="true" />
+        <MudTextField @bind-Value="_value" Placeholder="@ValuePlaceholder" Variant="Variant.Outlined" Margin="Margin.Dense" OnKeyUp="Enter" Immediate="true" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="Add">Add</MudButton>
+    </MudStack>
+</MudStack>
+
+@code {
+    [Parameter] public Dictionary<string, string> Value { get; set; } = new();
+    [Parameter] public EventCallback<Dictionary<string, string>> ValueChanged { get; set; }
+    [Parameter] public string KeyPlaceholder { get; set; } = "key";
+    [Parameter] public string ValuePlaceholder { get; set; } = "value";
+
+    private string _key = "";
+    private string _value = "";
+
+    private Task Changed() => ValueChanged.InvokeAsync(Value);
+
+    private Task Set(string key, string value)
+    {
+        Value[key] = value;
+        return Changed();
+    }
+
+    private Task Remove(string key)
+    {
+        Value.Remove(key);
+        return Changed();
+    }
+
+    private async Task Add()
+    {
+        if (string.IsNullOrWhiteSpace(_key)) return;
+        Value[_key.Trim()] = _value.Trim();
+        _key = _value = "";
+        await Changed();
+    }
+
+    private Task Enter(KeyboardEventArgs e) => e.Key == "Enter" ? Add() : Task.CompletedTask;
+}

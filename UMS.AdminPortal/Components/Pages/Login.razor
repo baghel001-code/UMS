@@ -1,0 +1,61 @@
+@page "/login"
+@layout LoginLayout
+@inject UmsApiClient Api
+@inject AuthSession Session
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+
+<PageTitle>Sign in · VMM UMS</PageTitle>
+
+<MudPaper Class="ums-login-card pa-8" Elevation="0">
+    <div class="ums-brand">
+        <div class="ums-logo">V</div>
+        <div>
+            <b>VMM UMS</b>
+            <small>Identity &amp; Access Admin</small>
+        </div>
+    </div>
+    <EditForm Model="_form" OnValidSubmit="SignInAsync">
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h6">Sign in</MudText>
+            <MudTextField @bind-Value="_form.Email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Required="true" AutoFocus="true" />
+            <MudTextField @bind-Value="_form.Password" Label="Password" InputType="InputType.Password" Variant="Variant.Outlined" Required="true" />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Disabled="_busy" FullWidth="true">
+                @(_busy ? "Signing in…" : "Sign in")
+            </MudButton>
+            <MudText Typo="Typo.caption" Class="muted">Access to this console is itself checked by UMS (UMS.* permissions).</MudText>
+        </MudStack>
+    </EditForm>
+</MudPaper>
+
+@code {
+    private sealed class LoginForm
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private readonly LoginForm _form = new();
+    private bool _busy;
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        try
+        {
+            var result = await Api.LoginAsync(_form.Email, _form.Password);
+            Session.SignIn(result);
+            await Storage.SetAsync("ums-session", new MainLayout.StoredSession(result.Token, result.FullName, result.TenantId));
+            Nav.NavigateTo("/");
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

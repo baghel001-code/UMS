@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "API + Admin Portal",
+    "Projects": [
+      {
+        "Path": "WebApi\\WebApi.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "UMS.AdminPortal\\UMS.AdminPortal.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      }
+    ]
+  }
+]

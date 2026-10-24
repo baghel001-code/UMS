@@ -1,0 +1,99 @@
+@page "/applications"
+@inherits TenantPage
+@inject IDialogService Dialogs
+@inject TenantState Tenant
+
+<PageTitle>Applications · VMM UMS</PageTitle>
+
+<PageHeader Title="Applications & Modules"
+            Subtitle="Register every in-house and third-party application, then describe its modules, resources and the actions allowed on each resource.">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => Edit(null)">Register application</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <MudToolBar Gutters="true" Class="gap-3 py-2" Style="height:auto;flex-wrap:wrap">
+        <MudTextField @bind-Value="_search" Placeholder="Search application, code, vendor…" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:260px" />
+        <MudSelect T="AppType?" @bind-Value="_type" Label="Type" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Style="max-width:180px">
+            <MudSelectItem T="AppType?" Value="AppType.InHouse">In-house</MudSelectItem>
+            <MudSelectItem T="AppType?" Value="AppType.ThirdParty">Third-party</MudSelectItem>
+        </MudSelect>
+        <MudSwitch @bind-Value="_showAll" Color="Color.Primary" Label="Include apps not enabled for this tenant" />
+    </MudToolBar>
+    <MudTable Items="Rows" Hover="true" Class="ums-table" Elevation="0" Loading="Loading" OnRowClick="(TableRowClickEventArgs<ApplicationDto> e) => Edit(e.Item)" RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>Application</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Owner</MudTh>
+            <MudTh>Modules</MudTh>
+            <MudTh>Resources</MudTh>
+            <MudTh>Permissions</MudTh>
+            <MudTh>Roles</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><b>@context.Name</b><div class="mono muted">@context.Code</div></MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@(context.Type == AppType.InHouse ? Color.Primary : Color.Warning)" Variant="Variant.Text">
+                    @(context.Type == AppType.InHouse ? "In-house" : "Third-party")
+                </MudChip>
+                <div class="muted" style="font-size:12px">@context.Vendor</div>
+            </MudTd>
+            <MudTd>@context.OwnerDept</MudTd>
+            <MudTd>@context.Modules.Count</MudTd>
+            <MudTd>@context.Modules.Sum(m => m.Resources.Count)</MudTd>
+            <MudTd>@context.Modules.Sum(m => m.Resources.Sum(r => r.Actions.Count))</MudTd>
+            <MudTd>@RoleCount(context)</MudTd>
+            <MudTd>
+                @{
+                    var status = !context.IsActive ? "Inactive" : context.TenantIds.Contains(TenantId) ? "Active" : "Disabled";
+                    var color = status == "Active" ? Color.Success : Color.Warning;
+                }
+                <MudChip T="string" Size="Size.Small" Color="color" Variant="Variant.Text">@status</MudChip>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-6 muted">No applications match.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<ApplicationDto> _apps = new();
+    private List<RoleDto> _roles = new();
+    private string _search = "";
+    private AppType? _type;
+    private bool _showAll;
+
+    private IEnumerable<ApplicationDto> Rows => _apps
+        .Where(a => _showAll || a.TenantIds.Contains(TenantId))
+        .Where(a => _type is null || a.Type == _type)
+        .Where(a => $"{a.Name} {a.Code} {a.Vendor} {a.OwnerDept}".Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private int RoleCount(ApplicationDto app) =>
+        _roles.Count(r => r.Permissions.Any(p => DomainLayer.ValueObjects.PermissionKey.Matches(p, $"{app.Code}.*.*.*")));
+
+    protected override async Task LoadAsync()
+    {
+        var apps = Api.ApplicationsAsync(all: true);
+        var roles = Api.RolesAsync();
+        _apps = await apps;
+        _roles = await roles;
+    }
+
+    private async Task Edit(ApplicationDto? app)
+    {
+        var model = app is null ? new ApplicationEdit { TenantIds = { TenantId } } : ApplicationEdit.From(app);
+        var parameters = new DialogParameters<ApplicationDialog>
+        {
+            { x => x.Model, model },
+            { x => x.IsNew, app is null },
+            { x => x.Tenants, Tenant.Tenants },
+        };
+        var dialog = await Dialogs.ShowAsync<ApplicationDialog>(app is null ? "Register application" : $"{app.Name} ({app.Code})", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false }) await ReloadAsync();
+    }
+}

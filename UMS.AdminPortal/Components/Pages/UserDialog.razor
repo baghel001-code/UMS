@@ -1,0 +1,280 @@
+@inject UmsApiClient Api
+@inject Ui Ui
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<MudDialog>
+    <DialogContent>
+        <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" PanelClass="pt-4" ActivePanelIndexChanged="TabChanged">
+            <MudTabPanel Text="Profile">
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.FullName" Label="Full name" Variant="Variant.Outlined" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.EmpCode" Label="Employee code" Variant="Variant.Outlined" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Email" Label="Email (login)" Variant="Variant.Outlined" InputType="InputType.Email" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Phone" Label="Phone" Variant="Variant.Outlined" Placeholder="+91 98100 00000" /></MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudAutocomplete T="string" @bind-Value="Model.Department" Label="Department" Variant="Variant.Outlined" CoerceValue="true"
+                                         SearchFunc="SearchDepartments" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Designation" Label="Designation" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Location" Label="Location (store / DC / office)" HelperText="Used by ABAC as user.location" Variant="Variant.Outlined" /></MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect @bind-Value="Model.Region" Label="Region" Variant="Variant.Outlined">
+                            @foreach (var r in Users.Regions)
+                            {
+                                <MudSelectItem Value="r">@r</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect @bind-Value="Model.EmploymentType" Label="Employment type" Variant="Variant.Outlined">
+                            @foreach (var e in Enum.GetValues<EmploymentType>())
+                            {
+                                <MudSelectItem Value="e">@e</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudDatePicker @bind-Date="Model.AccountExpiry" Label="Account expiry" HelperText="Contract / vendor accounts stop working after this date"
+                                       Variant="Variant.Outlined" Clearable="true" DateFormat="yyyy-MM-dd" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect @bind-Value="Model.Status" Label="Status" Variant="Variant.Outlined">
+                            @foreach (var s in Enum.GetValues<UserStatus>())
+                            {
+                                <MudSelectItem Value="s">@s</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" Class="d-flex align-center"><MudSwitch @bind-Value="Model.MfaEnabled" Color="Color.Success" Label="Multi-factor authentication enabled" /></MudItem>
+                    @if (!IsNew)
+                    {
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Set password</MudText>
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                <MudTextField @bind-Value="_password" Label="New password" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              HelperText="At least 8 characters with upper, lower case and a digit" Immediate="true" />
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_password.Length < 8)" OnClick="SetPasswordAsync">Set password</MudButton>
+                            </MudStack>
+                        </MudItem>
+                    }
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Roles">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.caption" Class="muted">Roles give permissions. Scope and validity narrow where and when a role works.</MudText>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AssignAsync">Assign role</MudButton>
+                </MudStack>
+                <MudSimpleTable Dense="true" Elevation="0" Bordered="true">
+                    <thead><tr><th>Role</th><th>Scope</th><th>Validity</th><th>State</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var a in Model.Roles.ToList())
+                        {
+                            var role = Roles.FirstOrDefault(r => r.Id == a.RoleId);
+                            var live = a.IsActiveOn(DateOnly.FromDateTime(DateTime.Today));
+                            var scheduled = a.ValidFrom > DateTime.Today;
+                            <tr>
+                                <td><b>@(role?.Name ?? a.RoleId.ToString())</b><div class="mono muted">@role?.Code</div></td>
+                                <td>
+                                    @if (a.Scope.Count == 0)
+                                    {
+                                        <span class="muted">Unscoped</span>
+                                    }
+                                    @foreach (var (k, v) in a.Scope)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@k=@v</MudChip>
+                                    }
+                                </td>
+                                <td>@Validity(a)</td>
+                                <td>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(live ? Color.Success : Color.Warning)">
+                                        @(live ? "In effect" : scheduled ? "Scheduled" : "Expired")
+                                    </MudChip>
+                                </td>
+                                <td><MudButton Size="Size.Small" Color="Color.Error" OnClick="() => Model.Roles.Remove(a)">Revoke</MudButton></td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (Model.Roles.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true">No roles assigned — the user cannot open any application.</MudAlert>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Attributes">
+                <MudText Typo="Typo.caption" Class="muted">
+                    Custom attributes available to ABAC policies as <span class="mono">user.&lt;key&gt;</span>. Built-in: department, designation, location, region,
+                    employmentType, empCode, mfaEnabled, roles.
+                </MudText>
+                <div class="mt-3"><KeyValueEditor @bind-Value="Model.Attributes" KeyPlaceholder="e.g. costCenter, vendorCode" /></div>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Effective access" Disabled="IsNew">
+                <MudText Typo="Typo.caption" Class="muted">
+                    What the user's active roles grant today (RBAC, as saved). ABAC policies such as office hours may still deny at runtime — use Test access for a concrete request.
+                </MudText>
+                @if (_effective is null)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-3" />
+                }
+                else
+                {
+                    <MudExpansionPanels Class="mt-3" MultiExpansion="true" Elevation="0">
+                        @foreach (var app in _effective.GroupBy(p => p.Key.Split('.')[0]))
+                        {
+                            <MudExpansionPanel Text="@($"{AppName(app.Key)} · {app.Count()} permission(s)")">
+                                @foreach (var res in app.GroupBy(p => string.Join('.', p.Key.Split('.').Take(3))))
+                                {
+                                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-1">
+                                        <span class="mono" style="min-width:260px">@res.Key</span>
+                                        @foreach (var p in res)
+                                        {
+                                            <MudTooltip Text="@($"via {string.Join(", ", p.ViaRoles)}")">
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@p.Key.Split('.')[3]</MudChip>
+                                            </MudTooltip>
+                                        }
+                                    </MudStack>
+                                }
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+                    @if (_effective.Count == 0)
+                    {
+                        <MudText Class="pa-4 muted">No effective permissions.</MudText>
+                    }
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Activity" Disabled="IsNew">
+                @if (_activity is null)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Recent access decisions</MudText>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            @foreach (var a in _activity.Take(30))
+                            {
+                                <tr>
+                                    <td class="muted" style="white-space:nowrap">@Fmt.DateTime(a.Timestamp)</td>
+                                    <td class="mono">@a.Action</td>
+                                    <td><MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Fmt.StatusColor(a.Decision.ToString())">@a.Decision</MudChip></td>
+                                    <td>@a.Reason</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                    @if (_activity.Count == 0)
+                    {
+                        <MudText Class="pa-3 muted">No recorded activity.</MudText>
+                    }
+                    <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Admin changes to this user</MudText>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            @foreach (var a in _changes!.Take(30))
+                            {
+                                <tr><td class="muted" style="white-space:nowrap">@Fmt.DateTime(a.Timestamp)</td><td>@a.Actor</td><td>@a.Summary</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                    @if (_changes!.Count == 0)
+                    {
+                        <MudText Class="pa-3 muted">No changes recorded.</MudText>
+                    }
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        @if (!IsNew)
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.PlayCircle" OnClick="TestAccess">Test access</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">Save user</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public UserEdit Model { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public List<RoleDto> Roles { get; set; } = new();
+    [Parameter] public List<string> Departments { get; set; } = new();
+
+    private string _password = "";
+    private bool _busy;
+    private List<EffectivePermissionDto>? _effective;
+    private List<ApplicationDto> _apps = new();
+    private List<UserActionLogDto>? _activity;
+    private List<AuditLogDto>? _changes;
+
+    private Task<IEnumerable<string>> SearchDepartments(string? text, CancellationToken _) =>
+        Task.FromResult(Departments.Where(d => string.IsNullOrEmpty(text) || d.Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+    private static string Validity(AssignmentEdit a) =>
+        a.ValidFrom is null && a.ValidTo is null ? "Permanent" : $"{a.ValidFrom?.ToString("yyyy-MM-dd") ?? "…"} → {a.ValidTo?.ToString("yyyy-MM-dd") ?? "…"}";
+
+    private string AppName(string code) => _apps.FirstOrDefault(a => a.Code == code)?.Name ?? code;
+
+    private async Task TabChanged(int index)
+    {
+        if (index == 3 && _effective is null)
+        {
+            var apps = Api.ApplicationsAsync();
+            _effective = await Ui.Run(() => Api.EffectivePermissionsAsync(Model.Id)) ?? new();
+            _apps = await Ui.Run(() => apps) ?? new();
+        }
+        if (index == 4 && _activity is null)
+        {
+            var id = Model.Id.ToString();
+            _activity = (await Ui.Run(() => Api.UserActionsAsync()) ?? new()).Where(a => a.UserId == Model.Id).ToList();
+            _changes = (await Ui.Run(() => Api.AuditLogsAsync()) ?? new()).Where(a => a.EntityId == id || a.EntityId.Split(',').Contains(id)).ToList();
+        }
+    }
+
+    private async Task AssignAsync()
+    {
+        var dialog = await Dialogs.ShowAsync<AssignRoleDialog>("Assign role", new DialogParameters<AssignRoleDialog>
+        {
+            { x => x.Roles, Roles },
+            { x => x.Exclude, Model.Roles.Select(r => r.RoleId).ToHashSet() },
+        }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: AssignmentEdit a })
+        {
+            Model.Roles.Add(a);
+            StateHasChanged();
+        }
+    }
+
+    private async Task SetPasswordAsync()
+    {
+        if (await Ui.Run(() => Api.SetPasswordAsync(Model.Id, _password)) != Guid.Empty)
+        {
+            Ui.Ok($"Password set for {Model.FullName}");
+            _password = "";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        var saved = await Ui.Run(() => Api.SaveUserAsync(Model.ToDto()));
+        _busy = false;
+        if (saved is null) return;
+        Ui.Ok($"Saved {saved.FullName}");
+        MudDialog.Close(DialogResult.Ok(saved));
+    }
+
+    private void TestAccess()
+    {
+        MudDialog.Cancel();
+        Nav.NavigateTo($"simulator?user={Model.Id}");
+    }
+}

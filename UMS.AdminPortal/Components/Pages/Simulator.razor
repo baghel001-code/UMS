@@ -1,0 +1,301 @@
+@page "/simulator"
+@inherits TenantPage
+@inject NavigationManager Nav
+@using ApplicationLayer.Features.AccessControl.Authorization
+@using DomainLayer.Authorization
+
+<PageTitle>Access Simulator · VMM UMS</PageTitle>
+
+<PageHeader Title="Access Simulator"
+            Subtitle="Ask the policy engine: can this user perform this action on this resource, right now, from here? Every step of the decision is explained." />
+
+<MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.caption" Class="muted mr-1">Scenarios:</MudText>
+    @foreach (var s in Scenarios)
+    {
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => ApplyAsync(s)">@s.Label</MudButton>
+    }
+</MudStack>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="6">
+        <MudStack Spacing="3">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Who</MudText></div>
+                <div class="ums-card-body">
+                    <MudAutocomplete T="UserAccountDto" @bind-Value="_user" SearchFunc="SearchUsers" ToStringFunc="UserLabel" Label="User" Variant="Variant.Outlined"
+                                     MaxItems="50" ResetValueOnEmptyText="true" AdornmentIcon="@Icons.Material.Filled.Search" />
+                    @if (_user is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="muted d-block mt-2">
+                            @_user.EmpCode · @_user.Department · @_user.Region · @_user.EmploymentType · MFA @(_user.MfaEnabled ? "on" : "off") · roles: @RoleCodes(_user)
+                        </MudText>
+                    }
+                </div>
+            </MudPaper>
+
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head">
+                    <MudText Typo="Typo.h6">What</MudText>
+                    <span class="mono">@($"{_app}.{_module}.{_resource}.{_action}".ToUpperInvariant())</span>
+                </div>
+                <div class="ums-card-body">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="string" Value="_app" ValueChanged="SetApp" Label="Application" Variant="Variant.Outlined">
+                                @foreach (var a in _apps)
+                                {
+                                    <MudSelectItem T="string" Value="a.Code">@a.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="string" Value="_module" ValueChanged="SetModule" Label="Module" Variant="Variant.Outlined">
+                                @foreach (var m in App?.Modules ?? new())
+                                {
+                                    <MudSelectItem T="string" Value="m.Code">@m.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="string" Value="_resource" ValueChanged="SetResource" Label="Resource" Variant="Variant.Outlined">
+                                @foreach (var r in Module?.Resources ?? new())
+                                {
+                                    <MudSelectItem T="string" Value="r.Code">@r.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="AccessAction" @bind-Value="_action" Label="Action" Variant="Variant.Outlined">
+                                @foreach (var a in Resource?.Actions ?? new())
+                                {
+                                    <MudSelectItem T="AccessAction" Value="a">@a</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle2">Resource attributes (the specific record)</MudText>
+                            <MudText Typo="Typo.caption" Class="muted">e.g. store=S045, amount=15000, ownerEmpCode=VMM10002, region=North</MudText>
+                            <div class="mt-2"><KeyValueEditor @bind-Value="_attrs" KeyPlaceholder="store / amount / ownerEmpCode" /></div>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+            </MudPaper>
+
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">When · Where · How</MudText></div>
+                <div class="ums-card-body">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="6"><MudDatePicker @bind-Date="_date" Label="Date" Variant="Variant.Outlined" DateFormat="yyyy-MM-dd" /></MudItem>
+                        <MudItem xs="6"><MudTimePicker @bind-Time="_time" Label="Time (IST)" Variant="Variant.Outlined" AmPm="false" /></MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" @bind-Value="_network" Label="Network" Variant="Variant.Outlined">
+                                @foreach (var n in Networks) { <MudSelectItem T="string" Value="n">@n</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" @bind-Value="_device" Label="Device" Variant="Variant.Outlined">
+                                @foreach (var d in Devices) { <MudSelectItem T="string" Value="d">@d</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudSelect T="string" @bind-Value="_channel" Label="Channel" Variant="Variant.Outlined">
+                                @foreach (var c in Channels) { <MudSelectItem T="string" Value="c">@c</MudSelectItem> }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="6"><MudTextField @bind-Value="_ip" Label="IP address" Variant="Variant.Outlined" /></MudItem>
+                    </MudGrid>
+                    <MudButton Class="mt-4" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true" StartIcon="@Icons.Material.Filled.PlayCircle"
+                               OnClick="EvaluateAsync" Disabled="@(_user is null || _busy)">Check access</MudButton>
+                </div>
+            </MudPaper>
+        </MudStack>
+    </MudItem>
+
+    <MudItem xs="12" lg="6">
+        <MudStack Spacing="3">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-body">
+                    @if (_decision is null)
+                    {
+                        <MudText Class="muted pa-4">Pick a scenario above, or choose a user and request and press <b>Check access</b>.</MudText>
+                    }
+                    else
+                    {
+                        <div class="ums-verdict @(_decision.Allowed ? "ok" : "bad")">
+                            <b>@(_decision.Allowed ? "✓ PERMIT" : "✕ DENY")</b>
+                            <span style="font-size:13px;font-weight:500">@_decision.Reason</span>
+                        </div>
+                        <ol class="ums-trace">
+                            @foreach (var s in _decision.Steps)
+                            {
+                                var css = s.Status.ToString().ToLowerInvariant();
+                                <li>
+                                    <span class="ums-dot @css">@StepIcon(s.Status)</span>
+                                    <b>@s.Layer</b>
+                                    <span>@s.Detail</span>
+                                </li>
+                            }
+                        </ol>
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-3">
+                            <MudText Typo="Typo.caption" Class="muted">Decided by the UMS API — the same call your applications make.</MudText>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" OnClick="RecordAsync">Record in action trail</MudButton>
+                        </MudStack>
+                    }
+                </div>
+            </MudPaper>
+
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">When is this allowed? (week of the selected date)</MudText></div>
+                <div class="ums-card-body">
+                    @if (_week.Count > 0)
+                    {
+                        <WeekGrid Cell="WeekCell" OnClass="allow" OffClass="deny" AriaLabel="Hours when the request is permitted" OnClick="PickHourAsync" />
+                        <MudText Typo="Typo.caption" Class="muted d-block mt-2">Green = permitted. Hover for the deny reason; click a cell to check that hour.</MudText>
+                    }
+                    else
+                    {
+                        <MudText Class="muted">Run a check to see the weekly pattern.</MudText>
+                    }
+                </div>
+            </MudPaper>
+        </MudStack>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private static readonly string[] Networks = { "Office LAN", "VPN", "Internet" };
+    private static readonly string[] Devices = { "Managed", "Unmanaged" };
+    private static readonly string[] Channels = { "Web", "Mobile", "POS Terminal", "API" };
+
+    private record Scenario(string Label, string EmpCode, string App, string Module, string Resource, AccessAction Action,
+        Dictionary<string, string> Attrs, string Channel = "Web", string Network = "Office LAN", string Device = "Managed", int Hour = 11, int Minute = 0);
+
+    // run on a fixed working day (Friday) so they behave the same whenever they are opened
+    private static readonly DateTime ScenarioDay = new(2026, 10, 23);
+
+    private static readonly Scenario[] Scenarios =
+    {
+        new("Cashier bills on POS terminal", "VMM10002", "POS", "BILLING", "INVOICE", AccessAction.Create, new() { ["store"] = "S045" }, "POS Terminal"),
+        new("Cashier bills at 23:30", "VMM10002", "POS", "BILLING", "INVOICE", AccessAction.Create, new() { ["store"] = "S045" }, "POS Terminal", Hour: 23, Minute: 30),
+        new("Cashier bills for another store", "VMM10002", "POS", "BILLING", "INVOICE", AccessAction.Create, new() { ["store"] = "S101" }, "POS Terminal"),
+        new("Supervisor refund ₹15,000", "VMM10003", "POS", "BILLING", "INVOICE", AccessAction.Refund, new() { ["store"] = "S045", ["amount"] = "15000" }, "POS Terminal"),
+        new("Finance exec at 8:15 pm", "VMM10004", "FIN", "GL", "JOURNAL", AccessAction.Create, new(), Hour: 20, Minute: 15),
+        new("Controller approves from Internet", "VMM10005", "FIN", "AP", "VENDOR_INVOICE", AccessAction.Approve, new() { ["amount"] = "240000" }, Network: "Internet"),
+        new("View someone else's payslip", "VMM10002", "HRMS", "ESS", "PAYSLIP", AccessAction.View, new() { ["ownerEmpCode"] = "VMM10003" }),
+        new("Named approver approves PO", "VMM10005", "PROC", "PO", "PURCHASE_ORDER", AccessAction.Approve, new() { ["approverEmpCode"] = "VMM10005", ["amount"] = "480000" }),
+        new("Export on personal laptop", "VMM10008", "UMS", "USERS", "USER", AccessAction.Export, new(), Device: "Unmanaged"),
+    };
+
+    private List<UserAccountDto> _users = new();
+    private List<RoleDto> _roles = new();
+    private List<ApplicationDto> _apps = new();
+
+    private UserAccountDto? _user;
+    private string _app = "", _module = "", _resource = "";
+    private AccessAction _action = AccessAction.View;
+    private Dictionary<string, string> _attrs = new();
+    private DateTime? _date = DateTime.Today;
+    private TimeSpan? _time = new(DateTime.Now.Hour, DateTime.Now.Minute, 0);
+    private string _network = "Office LAN", _device = "Managed", _channel = "Web", _ip = "10.12.4.21";
+
+    private AccessDecision? _decision;
+    private List<WeekCellDto> _week = new();
+    private bool _busy;
+
+    private ApplicationDto? App => _apps.FirstOrDefault(a => a.Code == _app);
+    private AppModuleDto? Module => App?.Modules.FirstOrDefault(m => m.Code == _module);
+    private AppResourceDto? Resource => Module?.Resources.FirstOrDefault(r => r.Code == _resource);
+
+    protected override async Task LoadAsync()
+    {
+        var users = Api.UsersAsync();
+        var roles = Api.RolesAsync();
+        var apps = Api.ApplicationsAsync();
+        _users = await users;
+        _roles = await roles;
+        _apps = await apps;
+
+        var q = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        _user = Guid.TryParse(q["user"], out var uid) ? _users.FirstOrDefault(u => u.Id == uid) : _users.FirstOrDefault();
+        SetApp(_apps.Any(a => a.Code == q["app"]) ? q["app"]! : _apps.FirstOrDefault()?.Code ?? "");
+        if (App?.Modules.Any(m => m.Code == q["module"]) == true) SetModule(q["module"]!);
+        if (Module?.Resources.Any(r => r.Code == q["resource"]) == true) SetResource(q["resource"]!);
+        _decision = null;
+        _week.Clear();
+    }
+
+    private string RoleCodes(UserAccountDto u) => string.Join(", ", u.Roles.Select(r => _roles.FirstOrDefault(x => x.Id == r.RoleId)?.Code));
+    private static string UserLabel(UserAccountDto? u) => u is null ? "" : $"{u.FullName} · {u.Designation} · {u.Location}";
+
+    private Task<IEnumerable<UserAccountDto>> SearchUsers(string? text, CancellationToken _) =>
+        Task.FromResult(_users.Where(u => string.IsNullOrWhiteSpace(text) ||
+            $"{u.FullName} {u.EmpCode} {u.Designation} {u.Location}".Contains(text, StringComparison.OrdinalIgnoreCase)));
+
+    private void SetApp(string code)
+    {
+        _app = code;
+        SetModule(App?.Modules.FirstOrDefault()?.Code ?? "");
+    }
+
+    private void SetModule(string code)
+    {
+        _module = code;
+        SetResource(Module?.Resources.FirstOrDefault()?.Code ?? "");
+    }
+
+    private void SetResource(string code)
+    {
+        _resource = code;
+        if (Resource is { } r && !r.Actions.Contains(_action)) _action = r.Actions.FirstOrDefault();
+    }
+
+    private async Task ApplyAsync(Scenario s)
+    {
+        _user = _users.FirstOrDefault(u => u.EmpCode == s.EmpCode);
+        if (_user is null) { Ui.Error("Scenario users exist in the Vishal Mega Mart Ltd tenant."); return; }
+        SetApp(s.App);
+        SetModule(s.Module);
+        SetResource(s.Resource);
+        _action = s.Action;
+        _attrs = new Dictionary<string, string>(s.Attrs);
+        (_date, _time, _network, _device, _channel) = (ScenarioDay, new TimeSpan(s.Hour, s.Minute, 0), s.Network, s.Device, s.Channel);
+        await EvaluateAsync();
+    }
+
+    private AccessRequestDto Request(bool log) => new(_user!.Id, null, _app, _module, _resource, _action, new Dictionary<string, string>(_attrs),
+        new AccessEnvironmentDto((_date ?? DateTime.Today).Date + (_time ?? TimeSpan.Zero), _ip, _network, _device, _channel), log, $"/simulator/{_module}/{_resource}".ToLowerInvariant());
+
+    private async Task EvaluateAsync()
+    {
+        if (_user is null) return;
+        _busy = true;
+        var decision = Api.AuthorizeAsync(Request(log: false));
+        var week = Api.AuthorizeWeekAsync(Request(log: false));
+        _decision = await Ui.Run(() => decision);
+        _week = await Ui.Run(() => week) ?? new();
+        _busy = false;
+    }
+
+    private async Task RecordAsync()
+    {
+        var recorded = await Ui.Run(() => Api.AuthorizeAsync(Request(log: true)));
+        if (recorded is not null) Ui.Ok($"Recorded in the user action trail ({(recorded.Allowed ? "PERMIT" : "DENY")})");
+    }
+
+    private (bool, string) WeekCell(Weekday day, int hour)
+    {
+        var c = _week.FirstOrDefault(x => x.Day == day && x.Hour == hour);
+        return c is null ? (false, "") : (c.Allowed, $"{day} {hour:00}:30 — {(c.Allowed ? "PERMIT" : c.Reason)}");
+    }
+
+    private async Task PickHourAsync((Weekday Day, int Hour) cell)
+    {
+        var c = _week.FirstOrDefault(x => x.Day == cell.Day && x.Hour == cell.Hour);
+        if (c is null) return;
+        (_date, _time) = (c.At.Date, c.At.TimeOfDay);
+        await EvaluateAsync();
+    }
+
+    private static string StepIcon(StepStatus s) => s switch { StepStatus.Pass => "✓", StepStatus.Fail => "✕", StepStatus.Skip => "–", _ => "i" };
+}

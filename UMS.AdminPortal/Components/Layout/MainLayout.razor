@@ -1,0 +1,147 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UmsApiClient Api
+@inject AuthSession Session
+@inject TenantState Tenant
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+
+<MudThemeProvider Theme="UmsTheme.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider MaxWidth="MaxWidth.Large" FullWidth="true" CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+@if (_error != null)
+{
+    <div class="ums-splash">
+        <MudPaper Class="ums-login-card pa-8" Elevation="0">
+            <MudText Typo="Typo.h6">Cannot load data</MudText>
+            <MudText Class="my-3" Color="Color.Secondary">@_error</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync" FullWidth="true">Try again</MudButton>
+        </MudPaper>
+    </div>
+}
+else if (!_ready)
+{
+    <div class="ums-splash"><MudProgressCircular Color="Color.Inherit" Indeterminate="true" Style="color:#fff" /></div>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="0" Class="ums-appbar" Dense="false">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => _drawer = !_drawer" />
+            <MudText Typo="Typo.subtitle1" Class="ums-crumb d-none d-sm-flex">@PageTitle</MudText>
+            <MudSpacer />
+            <MudSelect T="Guid" Value="Tenant.TenantId" ValueChanged="SelectTenant" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                       Label="Tenant" Class="ums-tenant">
+                @foreach (var t in Tenant.Tenants)
+                {
+                    <MudSelectItem T="Guid" Value="t.Id">@t.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTooltip Text="Reload from the API">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="LoadAsync" Class="d-none d-sm-flex" />
+            </MudTooltip>
+            <MudChip T="string" Color="Color.Primary" Variant="Variant.Text" Class="d-none d-md-flex">@(Session.FullName ?? "ums.admin")</MudChip>
+            @if (Session.Token != null)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="SignOutAsync">Sign out</MudButton>
+            }
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawer" ClipMode="DrawerClipMode.Never" Elevation="0" Variant="DrawerVariant.Responsive" Class="ums-drawer">
+            <div class="ums-brand">
+                <div class="ums-logo">V</div>
+                <div>
+                    <b>VMM UMS</b>
+                    <small>Identity &amp; Access Admin</small>
+                </div>
+            </div>
+            <NavMenu />
+            <div class="ums-drawer-foot">● Connected to @_apiHost</div>
+        </MudDrawer>
+
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="ums-content">
+                <CascadingValue Value="Tenant.TenantId" Name="TenantId">
+                    @Body
+                </CascadingValue>
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private bool _drawer = true;
+    private bool _ready;
+    private string? _error;
+    private string _apiHost = "";
+
+    public record StoredSession(string Token, string FullName, Guid TenantId);
+
+    private string PageTitle => NavMenu.TitleFor(Nav.ToBaseRelativePath(Nav.Uri));
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        Tenant.Changed += OnTenantChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (Session.Token == null)
+        {
+            try
+            {
+                var stored = await Storage.GetAsync<StoredSession>("ums-session");
+                if (stored.Success && stored.Value != null) Session.Restore(stored.Value.Token, stored.Value.FullName, stored.Value.TenantId);
+            }
+            catch (System.Security.Cryptography.CryptographicException) { /* key ring changed: sign in again */ }
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            var tenants = await Api.TenantsAsync();
+            Tenant.SetTenants(tenants, Session.HomeTenantId);
+            _apiHost = Config["UmsApi:BaseUrl"] ?? "UMS API";
+            _ready = true;
+        }
+        catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.Unauthorized)
+        {
+            Session.SignOut();
+            await Storage.DeleteAsync("ums-session");
+            Nav.NavigateTo("/login");
+            return;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private void SelectTenant(Guid id) => Tenant.Select(id);
+
+    private async Task SignOutAsync()
+    {
+        Session.SignOut();
+        await Storage.DeleteAsync("ums-session");
+        Nav.NavigateTo("/login", forceLoad: false);
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+    private void OnTenantChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        Tenant.Changed -= OnTenantChanged;
+    }
+}
