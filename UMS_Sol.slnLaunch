@@ -13,5 +13,25 @@
         "DebugTarget": "http"
       }
     ]
+  },
+  {
+    "Name": "API + Admin Portal + Asset Management",
+    "Projects": [
+      {
+        "Path": "WebApi\\WebApi.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "UMS.AdminPortal\\UMS.AdminPortal.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "AssetManagement\\AMS.Web\\AMS.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      }
+    ]
   }
 ]

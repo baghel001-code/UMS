@@ -9,7 +9,7 @@ namespace Infrastructure.Persistence
     /// </summary>
     public static class DemoDataSeeder
     {
-        public static async Task<bool> SeedIfEmptyAsync(IServiceProvider services, string? adminPassword, CancellationToken ct = default)
+        public static async Task<bool> SeedIfEmptyAsync(IServiceProvider services, string? adminPassword, string? userPassword = null, CancellationToken ct = default)
         {
             using var scope = services.CreateScope();
             var sp = scope.ServiceProvider;
@@ -17,7 +17,7 @@ namespace Infrastructure.Persistence
             if ((await tenants.ListAsync(ct)).Count > 0) return false;
 
             var seed = DemoSeed.Create();
-            ApplyAdminPassword(seed, sp.GetRequiredService<IPasswordHasher>(), adminPassword);
+            ApplyDemoPasswords(seed, sp.GetRequiredService<IPasswordHasher>(), adminPassword, userPassword);
 
             foreach (var t in seed.Tenants)
             {
@@ -42,11 +42,17 @@ namespace Infrastructure.Persistence
             return true;
         }
 
-        /// <summary>The seeded UMS administrator (Ankit Saxena, VMM10009) can sign in when a password is configured.</summary>
-        public static void ApplyAdminPassword(DemoSeed seed, IPasswordHasher hasher, string? adminPassword)
+        /// <summary>
+        /// Development sign-in: the UMS administrator (Ankit Saxena, VMM10009) gets <paramref name="adminPassword"/>, the other named demo users
+        /// (VMM10001–VMM10010, e.g. cashier Priya, asset manager Sneha, asset admin Rahul) get <paramref name="userPassword"/>. Nothing is set when empty.
+        /// </summary>
+        public static void ApplyDemoPasswords(DemoSeed seed, IPasswordHasher hasher, string? adminPassword, string? userPassword)
         {
-            if (string.IsNullOrWhiteSpace(adminPassword)) return;
-            seed.UserByEmpCode("VMM10009").SetPasswordHash(hasher.Hash(adminPassword));
+            if (!string.IsNullOrWhiteSpace(adminPassword)) seed.UserByEmpCode("VMM10009").SetPasswordHash(hasher.Hash(adminPassword));
+            if (string.IsNullOrWhiteSpace(userPassword)) return;
+            var hash = hasher.Hash(userPassword);
+            for (var n = 10001; n <= 10010; n++)
+                if (n != 10009) seed.UserByEmpCode($"VMM{n}").SetPasswordHash(hash);
         }
     }
 }

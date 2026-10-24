@@ -1,0 +1,65 @@
+@page "/login"
+@layout LoginLayout
+@inject AMS.Infrastructure.Ums.UmsClient Ums
+@inject AMS.Infrastructure.Ums.UmsSession Session
+@inject DemoData Demo
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+
+<PageTitle>Sign in · VMM Assets</PageTitle>
+
+<MudPaper Class="ums-login-card pa-8" Elevation="0">
+    <div class="ums-brand">
+        <div class="ums-logo">V</div>
+        <div>
+            <b>VMM Assets</b>
+            <small>Asset Management System</small>
+        </div>
+    </div>
+    <EditForm Model="_form" OnValidSubmit="SignInAsync">
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h6">Sign in with your UMS account</MudText>
+            <MudTextField @bind-Value="_form.Email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Required="true" AutoFocus="true" />
+            <MudTextField @bind-Value="_form.Password" Label="Password" InputType="InputType.Password" Variant="Variant.Outlined" Required="true" />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Disabled="_busy" FullWidth="true">
+                @(_busy ? "Signing in…" : "Sign in")
+            </MudButton>
+            <MudText Typo="Typo.caption" Class="muted">
+                Identity and every permission in this application are managed centrally in UMS (application code <b>AMS</b>).
+            </MudText>
+        </MudStack>
+    </EditForm>
+</MudPaper>
+
+@code {
+    private sealed class LoginForm
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private readonly LoginForm _form = new();
+    private bool _busy;
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Ums.LoginAsync(_form.Email.Trim(), _form.Password);
+            Session.SignIn(r.Token, new Actor(r.UserId, r.TenantId, r.EmpCode, r.FullName));
+            await Storage.SetAsync(Ui.SessionKey, new MainLayout.StoredSession(r.Token, r.UserId, r.TenantId, r.EmpCode, r.FullName));
+            await Demo.EnsureAsync(r.TenantId);
+            Nav.NavigateTo("/");
+        }
+        catch (AMS.Infrastructure.Ums.UmsException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

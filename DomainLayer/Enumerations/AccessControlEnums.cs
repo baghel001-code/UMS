@@ -13,7 +13,12 @@ namespace DomainLayer.Enumerations
         Export = 6,
         Print = 7,
         Void = 8,
-        Refund = 9
+        Refund = 9,
+        // asset-lifecycle actions (used by the Asset Management System and any app that hands items to people)
+        Checkout = 10,
+        Checkin = 11,
+        Audit = 12,
+        Request = 13
     }
 
     public enum AppType

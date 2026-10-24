@@ -338,7 +338,7 @@ namespace ApplicationLayer.Features.AccessControl.UserAccounts
 
             user.RecordLogin(LocalClock.Now(_time));
             await _users.SaveAsync(user, ct);
-            return Result<LoginResultDto>.Success(new LoginResultDto(_tokens.IssueToken(user), user.Id, user.TenantId, user.Name, user.Email.Value));
+            return Result<LoginResultDto>.Success(new LoginResultDto(_tokens.IssueToken(user), user.Id, user.TenantId, user.Name, user.Email.Value, user.EmpCode));
         }
     }
 }

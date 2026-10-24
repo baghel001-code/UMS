@@ -80,7 +80,8 @@ namespace Infrastructure.DependencyInjection
                 services.AddSingleton(sp =>
                 {
                     var seed = DemoSeed.Create();
-                    DemoDataSeeder.ApplyAdminPassword(seed, sp.GetRequiredService<IPasswordHasher>(), configuration["Persistence:DemoAdminPassword"]);
+                    DemoDataSeeder.ApplyDemoPasswords(seed, sp.GetRequiredService<IPasswordHasher>(), configuration["Persistence:DemoAdminPassword"],
+                        configuration["Persistence:DemoUserPassword"]);
                     return new InMemoryUmsStore(seed);
                 });
                 services.AddScoped<ITenantRepository, InMemoryTenantRepository>();

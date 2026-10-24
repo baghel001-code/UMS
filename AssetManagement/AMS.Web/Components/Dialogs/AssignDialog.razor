@@ -1,0 +1,86 @@
+@inject AssetService AssetSvc
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            @if (!string.IsNullOrEmpty(Item))
+            {
+                <MudText Typo="Typo.subtitle1"><b>@Item</b></MudText>
+            }
+            @if (PersonMode != Need.No)
+            {
+                <MudAutocomplete T="Person" @bind-Value="_person" Label="@(PersonMode == Need.Required ? "Check out to (employee)" : "Employee (optional)")"
+                                 SearchFunc="SearchPeople" ToStringFunc="@(p => p == null ? "" : $"{p.FullName} ({p.EmpCode})")"
+                                 Variant="Variant.Outlined" Clearable="true" DebounceInterval="250" MinCharacters="0" ResetValueOnEmptyText="true">
+                    <ItemTemplate Context="p">
+                        <div>
+                            <b>@p.FullName</b> <span class="muted">· @p.EmpCode</span>
+                            <div class="muted" style="font-size:12px">@p.Designation · @p.Department · @p.Location · @p.EmploymentType</div>
+                        </div>
+                    </ItemTemplate>
+                </MudAutocomplete>
+            }
+            @if (AssetMode != Need.No)
+            {
+                <MudAutocomplete T="Asset" @bind-Value="_asset" Label="@(AssetMode == Need.Required ? "Install into asset" : "Asset (optional)")"
+                                 SearchFunc="SearchAssets" ToStringFunc="@(a => a == null ? "" : $"{a.AssetTag} · {a.Name}")"
+                                 Variant="Variant.Outlined" Clearable="true" MinCharacters="0" ResetValueOnEmptyText="true" />
+            }
+            @if (MaxQuantity > 1)
+            {
+                <MudNumericField @bind-Value="_qty" Label="Quantity" Variant="Variant.Outlined" Min="1" Max="MaxQuantity" HelperText="@($"{MaxQuantity} available")" />
+            }
+            @if (AskDue)
+            {
+                <MudDatePicker @bind-Date="_due" Label="Expected check-in (optional)" Variant="Variant.Outlined" DateFormat="dd MMM yyyy" MinDate="DateTime.Today" />
+            }
+            <MudTextField @bind-Value="_note" Label="Note" Variant="Variant.Outlined" Lines="2" />
+            <MudText Typo="Typo.caption" Class="muted">UMS checks this with the item and the receiving employee (e.g. employment type, office hours).</MudText>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || !Valid)" OnClick="SaveAsync">@Verb</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public enum Need { No, Optional, Required }
+    public sealed record Result(string? EmpCode, Guid? AssetId, int Quantity, DateTime? Due, string? Note);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string? Item { get; set; }
+    [Parameter] public Need PersonMode { get; set; } = Need.Required;
+    [Parameter] public Need AssetMode { get; set; } = Need.No;
+    [Parameter] public List<Asset> AssetChoices { get; set; } = new();
+    [Parameter] public int MaxQuantity { get; set; } = 1;
+    [Parameter] public bool AskDue { get; set; }
+    [Parameter] public string Verb { get; set; } = "Check out";
+    [Parameter] public Func<Result, Task<bool>> Submit { get; set; } = default!;
+
+    private Person? _person;
+    private Asset? _asset;
+    private int _qty = 1;
+    private DateTime? _due;
+    private string? _note;
+    private bool _busy;
+
+    private bool Valid => (PersonMode != Need.Required || _person != null) && (AssetMode != Need.Required || _asset != null)
+                          && (PersonMode == Need.Required || AssetMode == Need.Required || _person != null || _asset != null);
+
+    private async Task<IEnumerable<Person>> SearchPeople(string? text, CancellationToken ct)
+    {
+        try { return await AssetSvc.PeopleAsync(text, ct); }
+        catch (Exception) { return Array.Empty<Person>(); }
+    }
+
+    private Task<IEnumerable<Asset>> SearchAssets(string? text, CancellationToken ct) =>
+        Task.FromResult(AssetChoices.Where(a => string.IsNullOrWhiteSpace(text) || $"{a.AssetTag} {a.Name} {a.AssignedToName}".Contains(text, StringComparison.OrdinalIgnoreCase)).Take(30));
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        if (await Submit(new Result(_person?.EmpCode, _asset?.Id, _qty, _due, _note))) MudDialog.Close(DialogResult.Ok(true));
+        _busy = false;
+    }
+}

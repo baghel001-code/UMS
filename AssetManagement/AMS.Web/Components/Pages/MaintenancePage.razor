@@ -1,0 +1,108 @@
+@page "/maintenance"
+@inject MaintenanceService MaintenanceSvc
+@inject AssetService AssetSvc
+@inject LookupService Lookups
+@inject AppState State
+@inject Ui Ui
+
+<PageTitle>Maintenance · VMM Assets</PageTitle>
+
+<PageHeader Title="Maintenance" Subtitle="Repairs, upgrades and servicing. UMS checks each record with its asset's location and the job's cost.">
+    <Actions>
+        @if (State.Can(Modules.Assets, Resources.Maintenance, Actions.Create))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Build" OnClick="() => EditAsync(null)">Log maintenance</MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <div class="ams-filters">
+        <MudSwitch T="bool" Value="_openOnly" ValueChanged="v => { _openOnly = v; _ = LoadAsync(); }" Color="Color.Primary" Label="Open jobs only" />
+    </div>
+    <MudTable T="MaintenanceRow" Items="_rows" Loading="_loading" Hover="true" Dense="true" Elevation="0" Class="ums-table" RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>Asset</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Title</MudTh>
+            <MudTh>Provider</MudTh>
+            <MudTh>Start</MudTh>
+            <MudTh>Completed</MudTh>
+            <MudTh Style="text-align:right">Cost</MudTh>
+            <MudTh Style="width:1%"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><MudLink Href="@($"assets/{context.Item.AssetId}")" Class="ams-tag">@context.Item.Asset?.AssetTag</MudLink><div class="muted" style="font-size:12px">@context.Item.Asset?.Name · @context.Item.Asset?.Location?.Code</div></MudTd>
+            <MudTd>@context.Item.Type</MudTd>
+            <MudTd>@context.Item.Title @(context.Item.IsWarranty ? "(warranty)" : "")</MudTd>
+            <MudTd>@context.Item.Supplier?.Name</MudTd>
+            <MudTd>@Fmt.Date(context.Item.StartDate)</MudTd>
+            <MudTd>
+                @if (context.Item.CompletionDate == null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">open</MudChip>
+                }
+                else
+                {
+                    @Fmt.Date(context.Item.CompletionDate)
+                }
+            </MudTd>
+            <MudTd Style="text-align:right">@Fmt.Money(context.Item.Cost)</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    @if (context.CanEdit)
+                    {
+                        <MudTooltip Text="Edit / complete"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => EditAsync(context)" /></MudTooltip>
+                    }
+                    @if (context.CanDelete)
+                    {
+                        <MudTooltip Text="Delete"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" /></MudTooltip>
+                    }
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="muted pa-4">No maintenance records you are allowed to see.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50 }" /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<MaintenanceRow> _rows = new();
+    private bool _openOnly;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _rows = await Ui.Run(() => MaintenanceSvc.ListAsync(_openOnly)) ?? new();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task EditAsync(MaintenanceRow? row)
+    {
+        var options = await Ui.Run(() => Lookups.OptionsAsync());
+        if (options == null) return;
+        var assets = row == null ? (await Ui.Run(() => AssetSvc.ListAsync(new AssetFilter())))?.Select(r => r.Asset).ToList() ?? new() : new List<Asset>();
+        var id = row?.Item.Id;
+        var p = new DialogParameters<MaintenanceDialog>
+        {
+            { x => x.Model, row == null ? new MaintenanceInput() : MaintenanceInput.From(row.Item) },
+            { x => x.Options, options },
+            { x => x.IsNew, row == null },
+            { x => x.AssetChoices, assets },
+            { x => x.AssetLabel, row == null ? null : $"{row.Item.Asset?.AssetTag} · {row.Item.Asset?.Name}" },
+            { x => x.Submit, m => Ui.Run(() => id == null ? MaintenanceSvc.CreateAsync(m) : MaintenanceSvc.UpdateAsync(id.Value, m), "Maintenance saved") },
+        };
+        if (await Ui.DialogAsync<MaintenanceDialog, bool>(row == null ? "Log maintenance" : "Edit maintenance", p, MaxWidth.Medium)) await LoadAsync();
+    }
+
+    private async Task DeleteAsync(MaintenanceRow row)
+    {
+        if (!await Ui.ConfirmAsync("Delete maintenance", $"Delete '{row.Item.Title}'?", "Delete")) return;
+        if (await Ui.Run(() => MaintenanceSvc.DeleteAsync(row.Item.Id), "Deleted")) await LoadAsync();
+    }
+}

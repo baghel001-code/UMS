@@ -1,0 +1,68 @@
+@implements IDisposable
+@inject AppState State
+
+<MudNavMenu Class="ums-nav">
+    @foreach (var group in Groups)
+    {
+        var items = group.Items.Where(i => State.Can(i.Module, i.Resource, i.Action)).ToList();
+        if (items.Count == 0) continue;
+        <div class="ums-nav-group">@group.Title</div>
+        @foreach (var item in items)
+        {
+            <MudNavLink Href="@item.Href" Match="@(item.Href == "" ? NavLinkMatch.All : NavLinkMatch.Prefix)" Icon="@item.Icon">@item.Title</MudNavLink>
+        }
+    }
+</MudNavMenu>
+
+@code {
+    /// <summary>A menu entry is shown when UMS allows its permission (type level). The page itself is checked again by the service.</summary>
+    public record Item(string Href, string Title, string Icon, string Module, string Resource, string Action = Actions.View);
+    public record Group(string Title, Item[] Items);
+
+    public static readonly Group[] Groups =
+    {
+        new("Overview", new[]
+        {
+            new Item("", "Dashboard", Icons.Material.Filled.SpaceDashboard, Modules.Dashboard, Resources.Overview),
+            new Item("my", "My Assets", Icons.Material.Filled.Badge, Modules.Self, Resources.MyAssets),
+        }),
+        new("Inventory", new[]
+        {
+            new Item("assets", "Assets", Icons.Material.Filled.Devices, Modules.Assets, Resources.Asset),
+            new Item("licenses", "Licences", Icons.Material.Filled.VpnKey, Modules.Licenses, Resources.License),
+            new Item("accessories", "Accessories", Icons.Material.Filled.Keyboard, Modules.Accessories, Resources.Accessory),
+            new Item("consumables", "Consumables", Icons.Material.Filled.Inventory2, Modules.Consumables, Resources.Consumable),
+            new Item("components", "Components", Icons.Material.Filled.Memory, Modules.Components, Resources.Component),
+        }),
+        new("Workflows", new[]
+        {
+            new Item("requests", "Asset Requests", Icons.Material.Filled.AssignmentInd, Modules.Assets, Resources.Request),
+            new Item("maintenance", "Maintenance", Icons.Material.Filled.Build, Modules.Assets, Resources.Maintenance),
+        }),
+        new("Insights", new[]
+        {
+            new Item("reports", "Reports", Icons.Material.Filled.Assessment, Modules.Reports, Resources.Report),
+            new Item("activity", "Activity Log", Icons.Material.Filled.History, Modules.Reports, Resources.Activity),
+        }),
+        new("Setup", new[]
+        {
+            new Item("setup/models", "Asset Models", Icons.Material.Filled.Category, Modules.Setup, Resources.Model),
+            new Item("setup/categories", "Categories", Icons.Material.Filled.Folder, Modules.Setup, Resources.Category),
+            new Item("setup/manufacturers", "Manufacturers", Icons.Material.Filled.Factory, Modules.Setup, Resources.Manufacturer),
+            new Item("setup/suppliers", "Suppliers", Icons.Material.Filled.LocalShipping, Modules.Setup, Resources.Supplier),
+            new Item("setup/locations", "Locations", Icons.Material.Filled.Store, Modules.Setup, Resources.Location),
+            new Item("setup/departments", "Departments", Icons.Material.Filled.Groups, Modules.Setup, Resources.Department),
+            new Item("setup/statuses", "Status Labels", Icons.Material.Filled.Label, Modules.Setup, Resources.Status),
+        }),
+    };
+
+    public static string TitleFor(string relativePath)
+    {
+        var path = relativePath.Split('?', '#')[0];
+        return Groups.SelectMany(g => g.Items).FirstOrDefault(i => i.Href != "" && path.StartsWith(i.Href))?.Title ?? (path == "" ? "Dashboard" : "Asset Management");
+    }
+
+    protected override void OnInitialized() => State.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => State.Changed -= OnChanged;
+}

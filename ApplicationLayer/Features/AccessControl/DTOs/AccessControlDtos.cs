@@ -48,5 +48,5 @@ namespace ApplicationLayer.Features.AccessControl.DTOs
     public record AccessRequestDto(Guid? UserId, string? EmpCode, string App, string Module, string Resource, AccessAction Action,
         Dictionary<string, string>? ResourceAttributes, AccessEnvironmentDto? Env, bool Log = true, string? Route = null);
 
-    public record LoginResultDto(string Token, Guid UserId, Guid TenantId, string FullName, string Email);
+    public record LoginResultDto(string Token, Guid UserId, Guid TenantId, string FullName, string Email, string EmpCode);
 }

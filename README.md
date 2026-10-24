@@ -14,6 +14,10 @@ The checks combine:
 
 The system is **multi-tenant** and writes an **audit trail**, a **user action trail** and **exception logs**.
 
+The solution also contains the **VMM Asset Management System (AMS)**, a Snipe-IT style application for every kind
+of company asset. AMS has no users, roles or permission rules of its own: people sign in with their UMS account,
+and UMS authorises every action (see [docs/ASSET_MANAGEMENT.md](docs/ASSET_MANAGEMENT.md)).
+
 ## Solution layout (`UMS_Sol.sln`)
 
 ```
@@ -28,8 +32,15 @@ src
 │                         RequirePermission filter (UMS protects itself with its own engine), JWT auth
 └── UMS.AdminPortal/      Blazor Server + MudBlazor admin console (prismatic blue / white theme).
                           Calls WebApi over HTTP; reuses the ApplicationLayer DTOs.
+AssetManagement           Asset Management System – a client application protected by UMS
+├── AMS.Core/             Entities (assets, licences, accessories, consumables, components, requests, …) and
+│                         services; every operation asks IAccessGuard (UMS) with the record's attributes
+├── AMS.Infrastructure/   EF Core (SQLite for development, SQL Server), tenant filter, demo data,
+│                         UmsClient + UmsAccessGuard (calls /api/v1/me/authorize with the user's token)
+└── AMS.Web/              Blazor Server + MudBlazor UI, same prismatic blue / white theme
 tests
-└── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats
+├── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats, AMS policies
+└── AMS.Tests             (AssetManagement/AMS.Tests) services always ask UMS, list filtering, guard client
 database/                 001_create_access_control_schema.sql (SQL Server)
 docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 ```
@@ -44,6 +55,8 @@ docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 3. Press **F5**.
    - The API runs at `http://localhost:5125` (Swagger UI at `/`).
    - The admin portal opens at **`http://localhost:5200`**.
+4. To run Asset Management as well, choose **API + Admin Portal + Asset Management** instead. AMS opens at
+   **`http://localhost:5300`**.
 
 In Development the API uses in-memory demo data (about 300 users, 13 applications, 21 roles and 11 policies in
 the main tenant) and does not require sign-in. Changes are kept until the API stops.
@@ -53,7 +66,8 @@ From the command line, run each in its own terminal:
 ```bash
 dotnet run --project WebApi --launch-profile http
 dotnet run --project UMS.AdminPortal --launch-profile http
-dotnet test                                # 28 xUnit tests
+dotnet run --project AssetManagement/AMS.Web --launch-profile http
+dotnet test UMS_Sol.sln                    # 56 xUnit tests (UMS 36 + AMS 20)
 ```
 
 The portal finds the API through `UmsApi:BaseUrl` in `UMS.AdminPortal/appsettings.json`.
@@ -108,3 +122,32 @@ Authorization: Bearer <service token>
 
 The response is `{ "allowed": false, "reason": "...", "steps": [ ... ] }`, and the decision is written to the
 user action trail.
+
+## Asset Management System (AMS)
+
+AMS covers what Snipe-IT does:
+- **Assets** with tags, models, serials, status labels, locations, departments, suppliers, purchase and warranty
+  data. Assets can be checked out and in (with an expected return date), audited, and printed as tag labels.
+- **Licences** with seats given to people or installed on assets. Product keys are hidden unless the user may edit.
+- **Accessories** (lent and returned), **consumables** (issued and used up, with re-order levels) and
+  **components** (installed into assets).
+- **Asset requests** with approval, **maintenance** (repairs, upgrades, warranty work), **My Assets** for every
+  employee, **reports** (depreciation, warranty, audits due, overdue check-ins), the **activity log**, CSV exports,
+  and setup lists.
+
+Sign in with a UMS account. Demo accounts (development, `Persistence:DemoUserPassword` / `DemoAdminPassword` in
+`WebApi/appsettings.Development.json`):
+
+| Who | Email | What UMS gives them in AMS |
+|-----|-------|----------------------------|
+| Ankit Saxena (UMS super admin) | `ankit.saxena@vmm.example` | Everything |
+| Rahul Agarwal | `rahul.agarwal@vmm.example` | `ASSET_ADMIN`: everything, but cannot approve his own requests |
+| Sneha Iyer | `sneha.iyer@vmm.example` | `ASSET_MANAGER` scoped to location `HO-GGN`; cannot dispose assets over ₹1 lakh |
+| Priya Verma (cashier) | `priya.verma@vmm.example` | `EMPLOYEE`: My Assets, request an asset, see and cancel own requests |
+
+To change who can do what in AMS, use the UMS admin portal: roles, role scopes, office hours and ABAC
+policies for application `AMS`. No AMS code or configuration changes are needed.
+
+In Development, AMS uses a SQLite file (`ams-dev.db`). It fills it with demo data for the main tenant on the first
+sign-in. For production, set `Ams:Database:Provider = SqlServer` and `ConnectionStrings:Ams`; the schema is created
+on start-up.

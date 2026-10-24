@@ -1,0 +1,151 @@
+@page "/licenses"
+@inject LicenseService LicenseSvc
+@inject AssetService AssetSvc
+@inject LookupService Lookups
+@inject AppState State
+@inject Ui Ui
+
+<PageTitle>Licences · VMM Assets</PageTitle>
+
+<PageHeader Title="Software licences" Subtitle="Seats given to people or installed on assets. Product keys are shown only to users UMS allows to edit the licence.">
+    <Actions>
+        @if (State.Can(Modules.Licenses, Resources.License, Actions.Export))
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync">Export CSV</MudButton>
+        }
+        @if (State.Can(Modules.Licenses, Resources.License, Actions.Create))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New licence</MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <div class="ams-filters">
+        <MudTextField T="string" Value="_search" ValueChanged="v => { _search = v; _ = LoadAsync(); }" Placeholder="Search licence or manufacturer…" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DebounceInterval="300" Class="grow" />
+    </div>
+    <MudTable T="LicenseRow" Items="_rows" Loading="_loading" Hover="true" Dense="true" Elevation="0" Class="ums-table" RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>Licence</MudTh>
+            <MudTh>Product key</MudTh>
+            <MudTh>Seats used</MudTh>
+            <MudTh>Expires</MudTh>
+            <MudTh Style="text-align:right">Cost</MudTh>
+            <MudTh Style="width:1%"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <b>@context.License.Name</b>
+                <div class="muted" style="font-size:12px">@context.License.Manufacturer?.Name · @context.License.Category?.Name</div>
+            </MudTd>
+            <MudTd><span class="mono">@(context.CanSeeKey ? context.License.ProductKey ?? "—" : "•••• hidden")</span></MudTd>
+            <MudTd Style="min-width:170px">
+                <div class="ums-hbar" style="grid-template-columns:1fr 64px">
+                    <div class="ums-track"><div class="ums-seg @(context.Free == 0 ? "bad" : "blue")" style="width:@Pct(context.Used, context.License.Seats)"></div></div>
+                    <b>@context.Used/@context.License.Seats</b>
+                </div>
+            </MudTd>
+            <MudTd>
+                @Fmt.Date(context.License.ExpirationDate)
+                @if (context.License.ExpirationDate is { } exp && exp <= DateOnly.FromDateTime(DateTime.Today).AddDays(90))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@(exp < DateOnly.FromDateTime(DateTime.Today) ? Color.Error : Color.Warning)" Variant="Variant.Text">
+                        @(exp < DateOnly.FromDateTime(DateTime.Today) ? "expired" : "renew soon")
+                    </MudChip>
+                }
+            </MudTd>
+            <MudTd Style="text-align:right">@Fmt.Money(context.License.PurchaseCost)</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    @if (context.CanCheckout)
+                    {
+                        <MudTooltip Text="Check out a seat"><MudIconButton Icon="@Icons.Material.Filled.Logout" Size="Size.Small" Color="Color.Primary" OnClick="() => CheckoutAsync(context)" /></MudTooltip>
+                    }
+                    <MudTooltip Text="Seat holders"><MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Primary" OnClick="() => SeatsAsync(context)" /></MudTooltip>
+                    @if (context.CanEdit)
+                    {
+                        <MudTooltip Text="Edit"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => EditAsync(context)" /></MudTooltip>
+                    }
+                    @if (context.CanDelete)
+                    {
+                        <MudTooltip Text="Delete"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" /></MudTooltip>
+                    }
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="muted pa-4">No licences you are allowed to see.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50 }" /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<LicenseRow> _rows = new();
+    private string? _search;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _rows = await Ui.Run(() => LicenseSvc.ListAsync(_search)) ?? new();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private static string Pct(int part, int total) => $"{(total == 0 ? 0 : part * 100.0 / total):0.#}%".Replace(',', '.');
+
+    private async Task EditAsync(LicenseRow? row)
+    {
+        var options = await Ui.Run(() => Lookups.OptionsAsync());
+        if (options == null) return;
+        var id = row?.License.Id;
+        var p = new DialogParameters<LicenseDialog>
+        {
+            { x => x.Model, row == null ? new LicenseInput { PurchaseDate = DateTime.Today, ExpirationDate = DateTime.Today.AddYears(1) } : LicenseInput.From(row.License) },
+            { x => x.Options, options },
+            { x => x.IsNew, row == null },
+            { x => x.Submit, m => Ui.Run(() => id == null ? LicenseSvc.CreateAsync(m) : LicenseSvc.UpdateAsync(id.Value, m), "Licence saved") },
+        };
+        if (await Ui.DialogAsync<LicenseDialog, bool>(row == null ? "New licence" : $"Edit {row.License.Name}", p, MaxWidth.Medium)) await LoadAsync();
+    }
+
+    private async Task CheckoutAsync(LicenseRow row)
+    {
+        var assets = (await Ui.Run(() => AssetSvc.ListAsync(new AssetFilter())))?.Select(r => r.Asset).ToList() ?? new();
+        var p = new DialogParameters<AssignDialog>
+        {
+            { x => x.Item, $"{row.License.Name} · {row.Free} of {row.License.Seats} seats free" },
+            { x => x.PersonMode, AssignDialog.Need.Optional },
+            { x => x.AssetMode, AssignDialog.Need.Optional },
+            { x => x.AssetChoices, assets },
+            { x => x.Submit, r => Ui.Run(() => LicenseSvc.CheckoutAsync(row.License.Id, r.EmpCode, r.AssetId, r.Note), "Seat checked out") },
+        };
+        if (await Ui.DialogAsync<AssignDialog, bool>("Check out a seat", p)) await LoadAsync();
+    }
+
+    private async Task SeatsAsync(LicenseRow row)
+    {
+        var p = new DialogParameters<HoldersDialog>
+        {
+            { x => x.HolderLabel, "Seat holder" },
+            { x => x.Load, () => LicenseSvc.SeatsAsync(row.License.Id) },
+            { x => x.Checkin, h => Ui.Run(() => LicenseSvc.CheckinAsync(h.Id, null), "Seat checked in") },
+        };
+        if (await Ui.DialogAsync<HoldersDialog, bool>($"Seats · {row.License.Name}", p)) await LoadAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        var csv = await Ui.Run(() => LicenseSvc.ExportCsvAsync(_search));
+        if (csv != null) await Ui.DownloadCsvAsync("licences", csv);
+    }
+
+    private async Task DeleteAsync(LicenseRow row)
+    {
+        if (!await Ui.ConfirmAsync("Delete licence", $"Delete {row.License.Name}?", "Delete")) return;
+        if (await Ui.Run(() => LicenseSvc.DeleteAsync(row.License.Id), "Licence deleted")) await LoadAsync();
+    }
+}

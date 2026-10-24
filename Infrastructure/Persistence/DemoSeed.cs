@@ -152,6 +152,27 @@ namespace Infrastructure.Persistence
             App("ITSM", "IT Helpdesk", tp, "ITSM vendor", "IT", "Tickets and access requests.", all,
                 M("TICKETS", "Tickets", R("TICKET", "Ticket", A.View, A.Create, A.Edit, A.Approve)),
                 M("ACCESS", "Access Requests", R("ACCESS_REQ", "Access request", A.View, A.Create, A.Approve)));
+            // Asset Management System: every AMS action is authorized against this catalogue (AssetManagement/ in this repo)
+            App("AMS", "Asset Management System", ih, "VMM IT", "IT", "Hardware, licenses, accessories, consumables and components across stores, DCs and offices.", all,
+                M("DASHBOARD", "Dashboard", R("OVERVIEW", "Asset overview", A.View)),
+                M("ASSETS", "Assets",
+                    R("ASSET", "Asset", A.View, A.Create, A.Edit, A.Delete, A.Checkout, A.Checkin, A.Audit, A.Export, A.Print),
+                    R("MAINTENANCE", "Maintenance", A.View, A.Create, A.Edit, A.Delete),
+                    R("REQUEST", "Asset request", A.View, A.Request, A.Approve, A.Void)),
+                M("LICENSES", "Licenses", R("LICENSE", "Software license", A.View, A.Create, A.Edit, A.Delete, A.Checkout, A.Checkin, A.Export)),
+                M("ACCESSORIES", "Accessories", R("ACCESSORY", "Accessory", A.View, A.Create, A.Edit, A.Delete, A.Checkout, A.Checkin)),
+                M("CONSUMABLES", "Consumables", R("CONSUMABLE", "Consumable", A.View, A.Create, A.Edit, A.Delete, A.Checkout)),
+                M("COMPONENTS", "Components", R("COMPONENT", "Component", A.View, A.Create, A.Edit, A.Delete, A.Checkout, A.Checkin)),
+                M("REPORTS", "Reports", R("ACTIVITY", "Activity log", A.View, A.Export), R("REPORT", "Reports", A.View, A.Export)),
+                M("SETUP", "Setup",
+                    R("CATEGORY", "Category", A.View, A.Create, A.Edit, A.Delete),
+                    R("MANUFACTURER", "Manufacturer", A.View, A.Create, A.Edit, A.Delete),
+                    R("MODEL", "Asset model", A.View, A.Create, A.Edit, A.Delete),
+                    R("SUPPLIER", "Supplier", A.View, A.Create, A.Edit, A.Delete),
+                    R("LOCATION", "Location", A.View, A.Create, A.Edit, A.Delete),
+                    R("DEPARTMENT", "Department", A.View, A.Create, A.Edit, A.Delete),
+                    R("STATUS", "Status label", A.View, A.Create, A.Edit, A.Delete)),
+                M("SELF", "Self service", R("MY_ASSETS", "My assets", A.View)));
         }
 
         // ------------------------------------------------------------ roles
@@ -171,7 +192,8 @@ namespace Infrastructure.Persistence
             Role(t, "EMPLOYEE", "Employee (Self Service)", null, "Default role for every employee.",
                 new[] { "HRMS.ESS.*.VIEW", "HRMS.ESS.PAYSLIP.PRINT", "HRMS.ESS.PROFILE.EDIT" }
                     .Concat(Each("HRMS.LEAVE.LEAVE_REQ", A.View, A.Create)).Concat(Each("ITSM.TICKETS.TICKET", A.View, A.Create))
-                    .Concat(Each("ITSM.ACCESS.ACCESS_REQ", A.View, A.Create)), true);
+                    .Concat(Each("ITSM.ACCESS.ACCESS_REQ", A.View, A.Create))
+                    .Concat(new[] { "AMS.SELF.MY_ASSETS.VIEW" }).Concat(Each("AMS.ASSETS.REQUEST", A.View, A.Request, A.Void)), true);
             Role(t, "CASHIER", "Cashier", "POS", "Billing on POS terminals.",
                 Each("POS.BILLING.INVOICE", A.View, A.Create, A.Print).Concat(Each("POS.BILLING.PAYMENT", A.View, A.Create))
                     .Concat(Each("POS.RETURNS.RETURN", A.View, A.Create)).Concat(Each("POS.SHIFT.CASH_DRAWER", A.View, A.Create)));
@@ -197,7 +219,12 @@ namespace Infrastructure.Persistence
             Role(t, "CRM_EXEC", "CRM Executive", "CRM", "Handles loyalty queries.",
                 new[] { "CRM.CUSTOMER.CUSTOMER.VIEW" }.Concat(Each("CRM.LOYALTY.POINTS", A.View, A.Edit)).Concat(new[] { "CRM.CAMPAIGN.*.VIEW" }));
             Role(t, "ECOM_OPS", "E-commerce Operations", "ECOM", "Manages online orders.", new[] { "ECOM.*.*.*" });
-            Role(t, "IT_SUPPORT", "IT Support Engineer", null, "Helpdesk and user look-up.", new[] { "ITSM.*.*.*", "UMS.USERS.USER.VIEW", "POS.CONFIG.*.*" });
+            Role(t, "IT_SUPPORT", "IT Support Engineer", null, "Helpdesk and user look-up.",
+                new[] { "ITSM.*.*.*", "UMS.USERS.USER.VIEW", "POS.CONFIG.*.*", "AMS.DASHBOARD.OVERVIEW.VIEW", "AMS.ASSETS.ASSET.VIEW" });
+            Role(t, "ASSET_ADMIN", "Asset Administrator", "AMS", "Full control of the Asset Management System incl. setup and disposal.", new[] { "AMS.*.*.*" });
+            Role(t, "ASSET_MANAGER", "Asset Manager", "AMS", "Runs assets of a location: check-out/in, audits, maintenance, approvals. Assign with a location scope.",
+                new[] { "AMS.DASHBOARD.*.*", "AMS.ASSETS.*.*", "AMS.LICENSES.*.*", "AMS.ACCESSORIES.*.*", "AMS.CONSUMABLES.*.*", "AMS.COMPONENTS.*.*",
+                        "AMS.REPORTS.*.*", "AMS.SETUP.*.VIEW", "AMS.SELF.*.*" });
 
             Role(VendorTenantId, "VENDOR_USER", "Vendor User", "PROC", "Supplier staff: view POs, respond to RFQs, raise bills.",
                 Each("PROC.PO.PURCHASE_ORDER", A.View, A.Print).Concat(new[] { "PROC.RFQ.RFQ.VIEW" }).Concat(Each("PROC.INVOICE.VENDOR_BILL", A.View, A.Create, A.Edit)));
@@ -284,6 +311,24 @@ namespace Infrastructure.Persistence
                 PolicyEffect.Restrict, 15, all, T("FIN", "*", "*", new[] { "Approve" }), new[] { C("user.mfaEnabled", O, "true"), C("env.network", ConditionOperator.In, "Office LAN,VPN") });
             P("Store managers: own store only", "Store managers may act only on store-tagged records of their own location.",
                 PolicyEffect.Restrict, 25, all, T("STOREOPS", "*", "*", AllActions, "STORE_MANAGER"), new[] { C("resource.store", O, "user.location", true) });
+            // --- Asset Management System ---
+            P("Asset check-out only during operating hours", "Assets can be checked out only within Store Operating Hours (08:00–23:00).",
+                PolicyEffect.Restrict, 20, all, T("AMS", "ASSETS", "ASSET", new[] { "Checkout" }), new[] { C("env.now", ConditionOperator.InSchedule, store) });
+            P("Managers cannot dispose high-value assets", "Deleting an asset that cost more than ₹1,00,000 needs an Asset Administrator.",
+                PolicyEffect.Deny, 30, all, T("AMS", "ASSETS", "ASSET", new[] { "Delete" }, "ASSET_MANAGER"), new[] { C("resource.cost", ConditionOperator.Gt, "100000") });
+            P("Employees see assets issued to them", "Resource-based grant: anyone may view an asset that is checked out to them.",
+                PolicyEffect.Grant, 50, all, T("AMS", "ASSETS", "ASSET", new[] { "View" }), new[] { C("resource.assignedToEmpCode", O, "user.empCode", true) });
+            P("No self-approval of asset requests", "Segregation of duties: a request cannot be approved by the person who raised it.",
+                PolicyEffect.Deny, 10, all, T("AMS", "ASSETS", "REQUEST", new[] { "Approve" }), new[] { C("resource.requestedByEmpCode", O, "user.empCode", true) });
+            P("Asset request approval needs MFA", "Approving asset requests requires MFA.",
+                PolicyEffect.Restrict, 15, all, T("AMS", "ASSETS", "REQUEST", new[] { "Approve" }), new[] { C("user.mfaEnabled", O, "true") });
+            P("High-value assets not issued to contract staff", "Assets costing over ₹1,50,000 cannot be checked out to contract, intern or vendor staff.",
+                PolicyEffect.Deny, 25, all, T("AMS", "ASSETS", "ASSET", new[] { "Checkout" }),
+                new[] { C("resource.cost", ConditionOperator.Gt, "150000"), C("resource.assigneeEmploymentType", ConditionOperator.In, "Contract,Intern,Vendor") });
+            P("Asset requests: own or asset staff", "A request can be seen or cancelled by its requester, asset staff or auditors.",
+                PolicyEffect.Restrict, 40, ConditionMatch.Any, T("AMS", "ASSETS", "REQUEST", new[] { "View", "Void" }),
+                new[] { C("resource.requestedByEmpCode", O, "user.empCode", true), C("user.roles", ConditionOperator.In, "ASSET_MANAGER,ASSET_ADMIN,SUPER_ADMIN,AUDITOR") });
+
             P("Vendors see only their own POs", "PO vendor code must match the vendor user’s vendor code.",
                 PolicyEffect.Restrict, 10, all, T("PROC", "*", "*", AllActions),
                 new[] { C("resource.vendorCode", O, "user.vendorCode", true), C("env.now", ConditionOperator.InSchedule, ScheduleId("VENDOR_HOURS").ToString()) }, VendorTenantId);
@@ -392,9 +437,13 @@ namespace Infrastructure.Persistence
             imran.UpdateProfile(imran.EmpCode, imran.Name, imran.Email, imran.Phone, imran.Department, imran.Designation, imran.Location, imran.Region,
                 imran.EmploymentType, imran.Status, imran.MfaEnabled, new DateOnly(2027, 3, 31));
             Users.Add(imran);
-            Users.Add(MakeUser(8, Profiles[15], "Sneha Iyer", "North", null, active, true, perm, true));
+            var sneha = MakeUser(8, Profiles[15], "Sneha Iyer", "North", null, active, true, perm, true);
+            // IT asset manager for the head office only (resource-based scope)
+            sneha.AssignRole(Assign(VmmTenantId, "ASSET_MANAGER", new Dictionary<string, string> { ["location"] = "HO-GGN" }));
+            Users.Add(sneha);
             Users.Add(MakeUser(9, admin, "Ankit Saxena", "North", null, active, true, perm, true));
             var rahul = MakeUser(10, Profiles[12], "Rahul Agarwal", "North", null, active, true, perm, true);
+            rahul.AssignRole(Assign(VmmTenantId, "ASSET_ADMIN"));
             // temporary access example: Rahul covered procurement head duties for one week (already expired)
             rahul.AssignRole(Assign(VmmTenantId, "PROC_HEAD", null, new DateOnly(2026, 10, 3), new DateOnly(2026, 10, 10)));
             Users.Add(rahul);

@@ -1,0 +1,57 @@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            @if (Message != null)
+            {
+                <MudText>@Message</MudText>
+            }
+            @if (Statuses != null)
+            {
+                <MudSelect T="Guid?" @bind-Value="_status" Label="Status after check-in" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var s in Statuses)
+                    {
+                        <MudSelectItem T="Guid?" Value="s.Id">@s.Name (@s.Type)</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            @if (DateLabel != null)
+            {
+                <MudDatePicker @bind-Date="_date" Label="@DateLabel" Variant="Variant.Outlined" DateFormat="dd MMM yyyy" />
+            }
+            <MudTextField @bind-Value="_note" Label="@NoteLabel" Variant="Variant.Outlined" Lines="3" Required="NoteRequired" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color" Disabled="@(_busy || (NoteRequired && string.IsNullOrWhiteSpace(_note)))" OnClick="SaveAsync">@Verb</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record Result(string? Note, DateTime? Date, Guid? StatusId);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string NoteLabel { get; set; } = "Note";
+    [Parameter] public bool NoteRequired { get; set; }
+    [Parameter] public string? DateLabel { get; set; }
+    [Parameter] public DateTime? DefaultDate { get; set; }
+    [Parameter] public List<StatusLabel>? Statuses { get; set; }
+    [Parameter] public string Verb { get; set; } = "Save";
+    [Parameter] public Color Color { get; set; } = Color.Primary;
+    [Parameter] public Func<Result, Task<bool>> Submit { get; set; } = default!;
+
+    private string? _note;
+    private DateTime? _date;
+    private Guid? _status;
+    private bool _busy;
+
+    protected override void OnInitialized() => _date = DefaultDate;
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        if (await Submit(new Result(_note, _date, _status))) MudDialog.Close(DialogResult.Ok(true));
+        _busy = false;
+    }
+}

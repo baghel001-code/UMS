@@ -1,0 +1,17 @@
+@* Shown instead of a page when UMS does not allow it; the reason comes from the UMS decision trace. *@
+<MudPaper Class="ums-card" Elevation="0">
+    <div class="ams-denied">
+        <div class="ico"><MudIcon Icon="@Icons.Material.Filled.GppBad" Size="Size.Large" /></div>
+        <MudText Typo="Typo.h6">You don't have access to @What</MudText>
+        <MudText Typo="Typo.body2" Class="muted mt-1">Access in Asset Management is granted in UMS (roles, scopes and policies). Ask your UMS administrator if you need it.</MudText>
+        @if (!string.IsNullOrEmpty(Reason))
+        {
+            <div class="reason">@Reason</div>
+        }
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public string What { get; set; } = "this page";
+    [Parameter] public string? Reason { get; set; }
+}

@@ -1,0 +1,68 @@
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                @if (IsNew && AssetChoices.Count > 0)
+                {
+                    <MudAutocomplete T="Asset" @bind-Value="_asset" Label="Asset" SearchFunc="SearchAssets" Variant="Variant.Outlined" Required="true"
+                                     ToStringFunc="@(a => a == null ? "" : $"{a.AssetTag} · {a.Name} · {a.Location?.Code}")" MinCharacters="0" ResetValueOnEmptyText="true" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.subtitle1"><b>@AssetLabel</b></MudText>
+                }
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="MaintenanceType" @bind-Value="Model.Type" Label="Type" Variant="Variant.Outlined">
+                    @foreach (var t in Enum.GetValues<MaintenanceType>())
+                    {
+                        <MudSelectItem T="MaintenanceType" Value="t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="8"><MudTextField @bind-Value="Model.Title" Label="Title" Variant="Variant.Outlined" Required="true" /></MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="Guid?" @bind-Value="Model.SupplierId" Label="Service provider" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var s in Options.Suppliers)
+                    {
+                        <MudSelectItem T="Guid?" Value="s.Id">@s.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4"><MudDatePicker @bind-Date="Model.StartDate" Label="Start" Variant="Variant.Outlined" DateFormat="dd MMM yyyy" /></MudItem>
+            <MudItem xs="12" sm="4"><MudDatePicker @bind-Date="Model.CompletionDate" Label="Completed" Variant="Variant.Outlined" DateFormat="dd MMM yyyy" Clearable="true" /></MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.Cost" Label="Cost (₹)" Variant="Variant.Outlined" Min="0" Format="N0" /></MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-center"><MudSwitch @bind-Value="Model.IsWarranty" Color="Color.Primary" Label="Under warranty" /></MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="Model.Notes" Label="Notes" Variant="Variant.Outlined" Lines="2" /></MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || (IsNew && AssetChoices.Count > 0 && _asset == null))" OnClick="SaveAsync">@(IsNew ? "Log maintenance" : "Save changes")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public MaintenanceInput Model { get; set; } = new();
+    [Parameter] public Options Options { get; set; } = default!;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public string? AssetLabel { get; set; }
+    [Parameter] public List<Asset> AssetChoices { get; set; } = new();
+    [Parameter] public Func<MaintenanceInput, Task<bool>> Submit { get; set; } = default!;
+    private Asset? _asset;
+    private bool _busy;
+
+    protected override void OnInitialized() => Model.StartDate ??= DateTime.Today;
+
+    private Task<IEnumerable<Asset>> SearchAssets(string? text, CancellationToken ct) =>
+        Task.FromResult(AssetChoices.Where(a => string.IsNullOrWhiteSpace(text) || $"{a.AssetTag} {a.Name}".Contains(text, StringComparison.OrdinalIgnoreCase)).Take(30));
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        if (_asset != null) Model.AssetId = _asset.Id;
+        if (await Submit(Model)) MudDialog.Close(DialogResult.Ok(true));
+        _busy = false;
+    }
+}

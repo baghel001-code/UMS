@@ -119,7 +119,7 @@ var app = builder.Build();
 
 // optional: fill an empty SQL Server database with the Vishal Mega Mart demo data
 if (persistence.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) && app.Configuration.GetValue("Persistence:SeedDemoData", false))
-    await DemoDataSeeder.SeedIfEmptyAsync(app.Services, app.Configuration["Persistence:DemoAdminPassword"]);
+    await DemoDataSeeder.SeedIfEmptyAsync(app.Services, app.Configuration["Persistence:DemoAdminPassword"], app.Configuration["Persistence:DemoUserPassword"]);
 
 app.UseMiddleware<ExceptionLoggingMiddleware>();
 

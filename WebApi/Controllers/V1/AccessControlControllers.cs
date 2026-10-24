@@ -251,3 +251,64 @@ namespace WebApi.Controllers.V1
             FromResult(await Mediator.Send(new ResolveExceptionCommand(Tenant.TenantId, id), ct));
     }
 }
+
+namespace WebApi.Controllers.V1
+{
+    using ApplicationLayer.Features.AccessControl.Authorization;
+    using DomainLayer.Authorization;
+    using System.Security.Claims;
+
+    /// <summary>
+    /// Self-service endpoints for applications protected by UMS (e.g. the Asset Management System). They forward the signed-in
+    /// user's UMS token; the user and tenant are taken from the token, never from the request.
+    /// </summary>
+    [ApiController]
+    [Authorize]
+    [Route("api/v1/me")]
+    [Produces("application/json")]
+    public class MeController : ControllerBase
+    {
+        private readonly IMediator _mediator;
+        public MeController(IMediator mediator) => _mediator = mediator;
+
+        public record MyAccessBatchRequest(List<MyAccessCheckDto> Checks, AccessEnvironmentDto? Env, bool Log = false);
+        public record MyAccessRequest(string App, string Module, string Resource, AccessAction Action, Dictionary<string, string>? ResourceAttributes,
+            AccessEnvironmentDto? Env, bool Log = true, string? Route = null);
+
+        private (Guid TenantId, Guid UserId) Caller()
+        {
+            if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ||
+                !Guid.TryParse(User.FindFirstValue(Infrastructure.Services.CurrentTenantService.ClaimType), out var tenantId))
+                throw new UnauthorizedAccessException("The token does not identify a UMS user.");
+            return (tenantId, userId);
+        }
+
+        private string Ip => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+
+        /// <summary>May I perform this action on this resource now? Logged to the user action trail by default.</summary>
+        [HttpPost("authorize")]
+        public async Task<ActionResult<AccessDecision>> Authorize(MyAccessRequest body, CancellationToken ct)
+        {
+            var (tenantId, userId) = Caller();
+            var check = new MyAccessCheckDto(body.App, body.Module, body.Resource, body.Action, body.ResourceAttributes, body.Route);
+            var result = await _mediator.Send(new CheckMyAccessBatchQuery(tenantId, userId, new List<MyAccessCheckDto> { check }, body.Env, body.Log, Ip), ct);
+            return result[0];
+        }
+
+        /// <summary>Many questions at once (list filtering, showing/hiding actions). Not logged unless log=true.</summary>
+        [HttpPost("authorize/batch")]
+        public async Task<ActionResult<List<AccessDecision>>> AuthorizeBatch(MyAccessBatchRequest body, CancellationToken ct)
+        {
+            var (tenantId, userId) = Caller();
+            return await _mediator.Send(new CheckMyAccessBatchQuery(tenantId, userId, body.Checks, body.Env, body.Log, Ip), ct);
+        }
+
+        /// <summary>Colleagues in my tenant (minimal profile) for "assign to…" pickers.</summary>
+        [HttpGet("directory")]
+        public async Task<ActionResult<List<DirectoryEntryDto>>> Directory([FromQuery] string? search, [FromQuery] int take = 50, CancellationToken ct = default)
+        {
+            var (tenantId, _) = Caller();
+            return await _mediator.Send(new GetDirectoryQuery(tenantId, search, take), ct);
+        }
+    }
+}

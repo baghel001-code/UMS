@@ -1,0 +1,133 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AMS.Infrastructure.Ums.UmsSession Session
+@inject AMS.Infrastructure.Ums.UmsClient Ums
+@inject AppState State
+@inject Ui Ui
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+
+<MudThemeProvider Theme="AmsTheme.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider MaxWidth="MaxWidth.Medium" FullWidth="true" CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+@if (_error != null)
+{
+    <div class="ums-splash">
+        <MudPaper Class="ums-login-card pa-8" Elevation="0">
+            <MudText Typo="Typo.h6">Cannot reach UMS</MudText>
+            <MudText Class="my-3" Color="Color.Secondary">@_error</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync" FullWidth="true">Try again</MudButton>
+        </MudPaper>
+    </div>
+}
+else if (!_ready)
+{
+    <div class="ums-splash"><MudProgressCircular Color="Color.Inherit" Indeterminate="true" Style="color:#fff" /></div>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="0" Class="ums-appbar" Dense="false">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => _drawer = !_drawer" />
+            <MudText Typo="Typo.subtitle1" Class="ums-crumb d-none d-sm-flex">@PageTitle</MudText>
+            <MudSpacer />
+            <MudTooltip Text="Re-check my access with UMS">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="LoadAsync" />
+            </MudTooltip>
+            <MudChip T="string" Color="Color.Primary" Variant="Variant.Text" Icon="@Icons.Material.Filled.AccountCircle" Class="d-none d-md-flex">
+                @Session.Actor?.Name · @Session.Actor?.EmpCode
+            </MudChip>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="Ui.SignOutAsync">Sign out</MudButton>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawer" ClipMode="DrawerClipMode.Never" Elevation="0" Variant="DrawerVariant.Responsive" Class="ums-drawer">
+            <div class="ums-brand">
+                <div class="ums-logo">V</div>
+                <div>
+                    <b>VMM Assets</b>
+                    <small>Asset Management System</small>
+                </div>
+            </div>
+            <NavMenu />
+            @if (!State.Caps.Any)
+            {
+                <MudText Typo="Typo.caption" Class="px-6 mt-4" Style="color:#a9c3f5">UMS has not granted you any Asset Management permission yet.</MudText>
+            }
+            <div class="ums-drawer-foot">● Access decided by UMS<br />@Ums.BaseAddress</div>
+        </MudDrawer>
+
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="ums-content">
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private bool _drawer = true;
+    private bool _ready;
+    private string? _error;
+
+    public record StoredSession(string Token, Guid UserId, Guid TenantId, string EmpCode, string FullName);
+
+    private string PageTitle => NavMenu.TitleFor(Nav.ToBaseRelativePath(Nav.Uri));
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        State.Changed += OnStateChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (!Session.IsSignedIn)
+        {
+            try
+            {
+                var stored = await Storage.GetAsync<StoredSession>(Ui.SessionKey);
+                if (stored is { Success: true, Value: { } s })
+                    Session.SignIn(s.Token, new Actor(s.UserId, s.TenantId, s.EmpCode, s.FullName));
+            }
+            catch (System.Security.Cryptography.CryptographicException) { /* key ring changed: sign in again */ }
+        }
+        if (!Session.IsSignedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            await State.RefreshAsync();
+            _ready = true;
+        }
+        catch (AMS.Infrastructure.Ums.UmsException ex) when (ex.IsUnauthorized)
+        {
+            await Ui.SignOutAsync();
+            return;
+        }
+        catch (AMS.Infrastructure.Ums.UmsException ex)
+        {
+            _error = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        State.Changed -= OnStateChanged;
+    }
+}

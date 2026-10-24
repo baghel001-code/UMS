@@ -134,6 +134,7 @@ same engine. Every change writes an `AuditLogs` row with before/after JSON.
 | Schedules | `GET /schedules`, `PUT/DELETE /schedules/{id}`, `GET/POST /holidays`, `DELETE /holidays/{id}` | `UMS.POLICIES.SCHEDULE.*` |
 | Decision | `POST /authorize` (body `AccessRequestDto`, returns `{allowed, reason, steps[]}`); `POST /authorize/week` (same request for every hour of the week, used by the simulator heat-map) | `UMS.POLICIES.DECISION.VIEW` |
 | Logs | `GET /audit-logs`, `GET /user-actions`, `GET /exceptions`, `PUT /exceptions/{id}/resolve` | `UMS.LOGS.*` |
+| Me (for protected apps) | `POST /me/authorize`, `POST /me/authorize/batch` (up to 2000 checks), `GET /me/directory?search=` — the user and tenant come from the caller's own token, so an app can only ask about its signed-in user | signed in |
 
 Errors are RFC 7807 problem responses:
 - 400 for validation and domain-rule failures

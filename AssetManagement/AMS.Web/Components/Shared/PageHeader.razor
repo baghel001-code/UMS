@@ -1,0 +1,19 @@
+<div class="ums-page-head">
+    <div>
+        <MudText Typo="Typo.h4" Class="ums-title">@Title</MudText>
+        @if (Subtitle != null)
+        {
+            <MudText Typo="Typo.body2" Class="ums-subtitle">@Subtitle</MudText>
+        }
+    </div>
+    @if (Actions != null)
+    {
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">@Actions</MudStack>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

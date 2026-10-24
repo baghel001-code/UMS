@@ -1,0 +1,90 @@
+@page "/my"
+@inject AssetService AssetSvc
+@inject AppState State
+@inject AMS.Infrastructure.Ums.UmsSession Session
+@inject Ui Ui
+
+<PageTitle>My assets · VMM Assets</PageTitle>
+
+<PageHeader Title="My assets" Subtitle="@($"Everything issued to {Session.Actor?.Name} ({Session.Actor?.EmpCode}). Speak to IT asset staff to return an item.")">
+    <Actions>
+        @if (State.Can(Modules.Assets, Resources.Request, Actions.Request))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddShoppingCart" Href="requests">Request an asset</MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+@if (_denied != null)
+{
+    <Denied What="My Assets" Reason="@_denied" />
+}
+else if (_items == null)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+}
+else
+{
+    <MudGrid Spacing="3">
+        <MudItem xs="12">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Assets (@_items.Assets.Count)</MudText></div>
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="ums-table">
+                    <thead><tr><th>Asset tag</th><th>Asset</th><th>Serial</th><th>Issued</th><th>Return by</th><th>Location</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _items.Assets)
+                        {
+                            <tr>
+                                <td><MudLink Href="@($"assets/{a.Id}")" Class="ams-tag">@a.AssetTag</MudLink></td>
+                                <td><b>@a.Name</b><div class="muted" style="font-size:12px">@a.Model?.Manufacturer?.Name · @a.Model?.Category?.Name</div></td>
+                                <td class="mono">@a.Serial</td>
+                                <td>@Fmt.DateTime(a.AssignedAt)</td>
+                                <td>@Fmt.Date(a.ExpectedCheckin)</td>
+                                <td>@a.Location?.Code</td>
+                            </tr>
+                        }
+                        @if (_items.Assets.Count == 0)
+                        {
+                            <tr><td colspan="6" class="muted">No assets are issued to you.</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Software (@_items.Licenses.Count)</MudText></div>
+                <div class="ums-card-body">
+                    @foreach (var s in _items.Licenses)
+                    {
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2"><MudIcon Icon="@Icons.Material.Filled.VpnKey" Color="Color.Primary" Size="Size.Small" /><span>@s.License?.Name</span><span class="muted">since @Fmt.Date(DateOnly.FromDateTime(s.AssignedAt))</span></MudStack>
+                    }
+                    @if (_items.Licenses.Count == 0) { <MudText Class="muted">None.</MudText> }
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="ums-card" Elevation="0" Style="height:100%">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">Accessories &amp; supplies</MudText></div>
+                <div class="ums-card-body">
+                    @foreach (var c in _items.Accessories)
+                    {
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2"><MudIcon Icon="@Icons.Material.Filled.Keyboard" Color="Color.Primary" Size="Size.Small" /><span>@c.Accessory?.Name</span><span class="muted">since @Fmt.Date(DateOnly.FromDateTime(c.AssignedAt))</span></MudStack>
+                    }
+                    @foreach (var c in _items.Consumables.Take(10))
+                    {
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2"><MudIcon Icon="@Icons.Material.Filled.Inventory2" Color="Color.Primary" Size="Size.Small" /><span>@c.Quantity × @c.Consumable?.Name</span><span class="muted">issued @Fmt.Date(DateOnly.FromDateTime(c.IssuedAt))</span></MudStack>
+                    }
+                    @if (_items.Accessories.Count == 0 && _items.Consumables.Count == 0) { <MudText Class="muted">None.</MudText> }
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private MyItems? _items;
+    private string? _denied;
+
+    protected override async Task OnInitializedAsync() => _items = await Ui.Run(() => AssetSvc.MyItemsAsync(), r => _denied = r);
+}
