@@ -1,0 +1,26 @@
+@using System.Net.Http
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.JSInterop
+@using MudBlazor
+@using AMS.Application.Interfaces
+@using AMS.Domain.Base
+@using AMS.Domain.Enums
+@using AMS.Domain.Models
+@using AMS.Domain.Requests
+@using AMS.Domain.Responses
+@using AMS.Infrastructure.Api
+@using AMS.Portal
+@using AMS.Portal.Auth
+@using AMS.Portal.Components
+@using AMS.Portal.Components.Account
+@using AMS.Portal.Components.Layout
+@using AMS.Portal.Components.Shared
+@using AMS.Portal.Components.Dialogs
+@using AMS.Portal.Services
+@using static AMS.Domain.Security.Perm
+@attribute [Authorize]

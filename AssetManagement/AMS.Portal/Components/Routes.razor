@@ -1,0 +1,29 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AMS.Portal.Auth.ClientInfo Client
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.MainLayout)">
+            <MudText Typo="Typo.h5">Page not found.</MudText>
+        </LayoutView>
+    </NotFound>
+</Router>
+
+@code {
+    [Parameter] public string? ClientIp { get; set; }
+    [Parameter] public string? UserAgent { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Client.Ip = ClientIp;
+        Client.UserAgent = UserAgent;
+    }
+}

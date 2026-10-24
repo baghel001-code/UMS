@@ -1,0 +1,18 @@
+@inject NavigationManager Nav
+@inject SessionEndState Ended
+@inject Ui Ui
+
+@code {
+    protected override void OnInitialized()
+    {
+        // the session ended while the page was open (idle, signed in elsewhere...): sign out properly so the cookie is cleared and,
+        // for idle, the UMS session is ended too; the sign-out page then shows the reason on the login page
+        if (Ended.Reason != null)
+        {
+            Ui.SignOut(Ended.Reason);
+            return;
+        }
+        var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"{AuthConstants.LoginPath}?returnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+    }
+}

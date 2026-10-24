@@ -1,0 +1,131 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AppState State
+@inject Ui Ui
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider Auth
+@inject SessionEndState Ended
+@inject LoginNotices Notices
+@inject ISnackbar Snackbar
+@inject AMS.Infrastructure.Ums.UmsOptions Ums
+
+<MudThemeProvider Theme="AmsTheme.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider MaxWidth="MaxWidth.Medium" FullWidth="true" CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+<IdleTimeoutMonitor />
+<LogoutForm @ref="_logout" />
+
+@if (_error != null)
+{
+    <div class="ums-splash">
+        <MudPaper Class="ums-login-card pa-8" Elevation="0">
+            <MudText Typo="Typo.h6">Cannot load Asset Management</MudText>
+            <MudText Class="my-3" Color="Color.Secondary">@_error</MudText>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Try again</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="() => Ui.SignOut()">Sign out</MudButton>
+            </MudStack>
+        </MudPaper>
+    </div>
+}
+else if (!_ready)
+{
+    <div class="ums-splash"><MudProgressCircular Color="Color.Inherit" Indeterminate="true" Style="color:#fff" /></div>
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="0" Class="ums-appbar" Dense="false">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="() => _drawer = !_drawer" />
+            <MudText Typo="Typo.subtitle1" Class="ums-crumb d-none d-sm-flex">@PageTitle</MudText>
+            <MudSpacer />
+            <MudTooltip Text="Re-check my access with UMS">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="LoadAsync" />
+            </MudTooltip>
+            <MudChip T="string" Color="Color.Primary" Variant="Variant.Text" Icon="@Icons.Material.Filled.AccountCircle" Class="d-none d-md-flex">
+                @_user?.Name · @_user?.EmpCode
+            </MudChip>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="() => _logout!.SubmitAsync(signedOut)">Sign out</MudButton>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawer" ClipMode="DrawerClipMode.Never" Elevation="0" Variant="DrawerVariant.Responsive" Class="ums-drawer">
+            <div class="ums-brand">
+                <div class="ums-logo">V</div>
+                <div>
+                    <b>VMM Assets</b>
+                    <small>Asset Management System</small>
+                </div>
+            </div>
+            <NavMenu />
+            @if (State.Caps.Allowed.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Class="px-6 mt-4" Style="color:#a9c3f5">UMS has not granted you any Asset Management permission yet.</MudText>
+            }
+            <div class="ums-drawer-foot">● Access decided by UMS<br />@Ums.BaseUrl</div>
+        </MudDrawer>
+
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="ums-content">
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private const string signedOut = "signedout";
+    private bool _drawer = true;
+    private bool _ready;
+    private string? _error;
+    private PortalUser? _user;
+    private LogoutForm? _logout;
+
+    private string PageTitle => NavMenu.TitleFor(Nav.ToBaseRelativePath(Nav.Uri));
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        State.Changed += OnStateChanged;
+        Auth.AuthenticationStateChanged += OnAuthChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = PortalUser.From((await Auth.GetAuthenticationStateAsync()).User);
+        if (_user != null && Notices.Take(_user.SessionId))
+            Snackbar.Add("You were signed in on another device; that session has been signed out.", Severity.Info);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        var caps = await State.RefreshAsync();
+        if (caps.responseCode == ResponseCodes.Unauthorized)
+        {
+            Ui.SignOut(Ended.Reason ?? "expired");
+            return;
+        }
+        if (!caps.IsSuccess) _error = caps.responseMessage;
+        _ready = caps.IsSuccess;
+        StateHasChanged();
+    }
+
+    // the revalidator found the session ended (replaced, revoked, idle): finish with the real sign-out so the cookie is cleared
+    private void OnAuthChanged(Task<AuthenticationState> task) => _ = InvokeAsync(async () =>
+    {
+        var state = await task;
+        if (state.User.Identity?.IsAuthenticated != true && _logout != null) await _logout.SubmitAsync(Ended.Reason ?? "expired");
+    });
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        State.Changed -= OnStateChanged;
+        Auth.AuthenticationStateChanged -= OnAuthChanged;
+    }
+}

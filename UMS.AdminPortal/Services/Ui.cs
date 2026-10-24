@@ -33,8 +33,9 @@ namespace UMS.AdminPortal.Services
             }
             catch (ApiException ex) when (ex.Status == HttpStatusCode.Unauthorized)
             {
-                _session.SignOut();
-                _nav.NavigateTo("/login");
+                // the session ended (expired, idle, signed in elsewhere, revoked): the sign-in page says why
+                _session.SignOut(ex.SessionEnded);
+                _nav.NavigateTo(ex.SessionEnded == null ? "/login" : $"/login?reason={ex.SessionEnded}");
                 return default;
             }
             catch (ApiException ex)
@@ -45,6 +46,13 @@ namespace UMS.AdminPortal.Services
         }
 
         public async Task<bool> Run(Func<Task> call) => await Run(async () => { await call(); return true; });
+    }
+
+    /// <summary>The browser's address and user agent, captured on the first HTTP request of the circuit (sent to UMS on sign-in).</summary>
+    public class ClientInfo
+    {
+        public string? Ip { get; set; }
+        public string? UserAgent { get; set; }
     }
 
     public static class Fmt

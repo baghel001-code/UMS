@@ -1,3 +1,5 @@
+@inject ClientInfo Client
+
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
@@ -9,3 +11,14 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    [Parameter] public string? ClientIp { get; set; }
+    [Parameter] public string? UserAgent { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Client.Ip = ClientIp;
+        Client.UserAgent = UserAgent;
+    }
+}

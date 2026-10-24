@@ -125,7 +125,8 @@ same engine. Every change writes an `AuditLogs` row with before/after JSON.
 
 | Area | Endpoints | Permission |
 |------|-----------|------------|
-| Auth | `POST /auth/login` | anonymous |
+| Auth | `POST /auth/login` (`email, password, appCode, clientIp, userAgent` → access token, refresh token, session id, idle timeout); `POST /auth/refresh` (rotates the refresh token); `GET /auth/session?touch=` (is the session still active; `touch` records activity); `POST /auth/logout` (`SignedOut` or `Idle`) | anonymous (login, refresh); signed in |
+| Sessions | `GET /sessions?activeOnly=`, `DELETE /sessions/{id}` (sign a user out) | `UMS.SETUP.SESSION.View/Delete` |
 | Tenants | `GET /tenants`, `PUT /tenants/{id}`, `GET/PUT /tenants/{id}/settings` | `UMS.SETUP.TENANT.*`, `UMS.SETUP.SETTINGS.*` |
 | Applications | `GET /applications[?all=true]`, `PUT/DELETE /applications/{id}` | `UMS.SETUP.APPLICATION.*` |
 | Roles | `GET /roles`, `PUT/DELETE /roles/{id}` | `UMS.ROLES.ROLE.*` |
@@ -136,9 +137,24 @@ same engine. Every change writes an `AuditLogs` row with before/after JSON.
 | Logs | `GET /audit-logs`, `GET /user-actions`, `GET /exceptions`, `PUT /exceptions/{id}/resolve` | `UMS.LOGS.*` |
 | Me (for protected apps) | `POST /me/authorize`, `POST /me/authorize/batch` (up to 2000 checks), `GET /me/directory?search=` — the user and tenant come from the caller's own token, so an app can only ask about its signed-in user | signed in |
 
+### Sign-in sessions
+
+Every sign-in creates a `UserSessions` row (`database/002_sessions_and_lockout.sql`) for one application:
+- The access token carries the session as `sid` (with `app`, `tenant_id`, `emp_code`) and lives `JwtExpiryMinutes`.
+- The refresh token is `{sid}.{random}`; only its SHA-256 hash is stored. Each refresh rotates it, and presenting an
+  old one ends the session (`TokenReuse`).
+- JWT validation checks the session on every request (cached 10 seconds; ending a session clears the cache). A
+  session that ended or ran out answers 401 with `X-Session-End: Replaced | Idle | Expired | RevokedByAdmin |
+  TokenReuse | SignedOut | AccountDisabled`, so clients can tell the user why.
+- With `SingleDeviceLogin`, a new sign-in ends the user's open sessions in the same application (`Replaced`).
+- Idle: no activity for `SessionTimeoutMinutes` (clients report activity through `GET /auth/session?touch=true`).
+  Absolute lifetime: `RefreshTokenDays`.
+- Lockout: `LoginAttempts` counts failures per login; `MaxFailedLogins` locks for `LockoutMinutes`.
+
 Errors are RFC 7807 problem responses:
 - 400 for validation and domain-rule failures
-- 401 when the caller is not signed in
+- 401 when the caller is not signed in, with `code` (`auth.invalid`, `auth.locked`, `session.replaced`, …) and the
+  `X-Session-End` header when a session ended
 - 403 with the deny reason when a permission check fails
 - 404 for unknown records
 - 500 for unexpected errors, which are also written to `ExceptionLogs`

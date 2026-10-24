@@ -1,0 +1,153 @@
+@page "/assets"
+@inject AppState State
+@inject Ui Ui
+@inject NavigationManager Nav
+
+<PageTitle>Assets · VMM Assets</PageTitle>
+
+<PageHeader Title="Assets" Subtitle="Hardware and equipment tracked by tag. You see the assets UMS lets you view (role scope, own assets…); each row shows only the actions UMS allows on that asset.">
+    <Actions>
+        @if (State.Can(Modules.Assets, Resources.Asset, Actions.Print))
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.QrCode2" Href="@LabelsHref">Print labels</MudButton>
+        }
+        @if (State.Can(Modules.Assets, Resources.Asset, Actions.Export))
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync">Export CSV</MudButton>
+        }
+        @if (State.Can(Modules.Assets, Resources.Asset, Actions.Create))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="EditAsync">New asset</MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <div class="ams-filters">
+        <MudTextField T="string" Value="_filter.Search" ValueChanged="v => { _filter.Search = v; _ = LoadAsync(); }" Placeholder="Search tag, name, serial, holder…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="300" Class="grow" />
+        <MudSelect T="bool?" Value="_filter.CheckedOut" ValueChanged="v => { _filter.CheckedOut = v; _ = LoadAsync(); }" Label="Holder" Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="bool?" Value="null">All</MudSelectItem>
+            <MudSelectItem T="bool?" Value="false">In stock</MudSelectItem>
+            <MudSelectItem T="bool?" Value="true">Checked out</MudSelectItem>
+        </MudSelect>
+        @if (_options?.Categories.Count > 0)
+        {
+            <MudSelect T="int?" Value="_filter.CategoryId" ValueChanged="v => { _filter.CategoryId = v; _ = LoadAsync(); }" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var c in _options.Categories.Where(c => c.CategoryKind == CategoryKind.Asset))
+                {
+                    <MudSelectItem T="int?" Value="c.Id">@c.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        @if (_options?.Locations.Count > 0)
+        {
+            <MudSelect T="int?" Value="_filter.LocationId" ValueChanged="v => { _filter.LocationId = v; _ = LoadAsync(); }" Label="Location" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var l in _options.Locations)
+                {
+                    <MudSelectItem T="int?" Value="l.Id">@l.Code</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        @if (_options?.Statuses.Count > 0)
+        {
+            <MudSelect T="int?" Value="_filter.StatusLabelId" ValueChanged="v => { _filter.StatusLabelId = v; _ = LoadAsync(); }" Label="Status" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                @foreach (var s in _options.Statuses)
+                {
+                    <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+    </div>
+
+    <MudTable T="AssetRow" Items="_rows" Loading="_loading" Hover="true" Dense="true" Elevation="0" Class="ums-table" RowsPerPage="25"
+              OnRowClick="OpenRow">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="AssetRow" SortBy="r => r.Asset.AssetTag">Asset tag</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AssetRow" SortBy="r => r.Asset.Name">Asset</MudTableSortLabel></MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh><MudTableSortLabel T="AssetRow" SortBy="r => r.Asset.LocationCode">Location</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AssetRow" SortBy="r => r.Asset.AssignedToName ?? string.Empty">Checked out to</MudTableSortLabel></MudTh>
+            <MudTh Style="text-align:right"><MudTableSortLabel T="AssetRow" SortBy="r => r.Asset.PurchaseCost">Cost</MudTableSortLabel></MudTh>
+            <MudTh>Next audit</MudTh>
+            <MudTh Style="width:1%"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><span class="ams-tag">@context.Asset.AssetTag</span></MudTd>
+            <MudTd>
+                <b>@context.Asset.Name</b>
+                <div class="muted" style="font-size:12px">@context.Asset.ManufacturerName · @context.Asset.CategoryName @(context.Asset.Serial == null ? "" : "· " + context.Asset.Serial)</div>
+            </MudTd>
+            <MudTd><span class="ams-dot @context.Asset.StatusType"></span>@context.Asset.StatusName</MudTd>
+            <MudTd>@context.Asset.LocationCode</MudTd>
+            <MudTd>
+                @if (context.Asset.IsCheckedOut)
+                {
+                    <span>@context.Asset.AssignedToName</span>
+                    <div class="muted" style="font-size:12px">@context.Asset.AssignedToEmpCode @(context.Asset.ExpectedCheckin is { } due ? $"· due {Fmt.Date(due)}" : "")</div>
+                }
+                else
+                {
+                    <span class="muted">In stock</span>
+                }
+            </MudTd>
+            <MudTd Style="text-align:right">@Fmt.Money(context.Asset.PurchaseCost)</MudTd>
+            <MudTd>@Fmt.Date(context.Asset.NextAuditDate)</MudTd>
+            <MudTd @onclick:stopPropagation="true">
+                <AssetActions Row="context" Changed="LoadAsync" Statuses="_options?.Statuses" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="muted pa-4">No assets you are allowed to see match these filters.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private readonly AssetFilterReq _filter = new();
+    private List<AssetRow> _rows = new();
+    private OptionsRes? _options;
+    private bool _loading = true;
+
+    private string LabelsHref => "assets/labels" + (_filter.LocationId is { } l ? $"?location={l}" : "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (q.TryGetValue("status", out var st)) _filter.CheckedOut = st == "out" ? true : st == "instock" ? false : null;
+        if (q.TryGetValue("search", out var s)) _filter.Search = s;
+        _options = await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS);
+        await LoadAsync();
+        if (q.ContainsKey("new") && State.Can(Modules.Assets, Resources.Asset, Actions.Create)) await EditAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _rows = (await Ui.Call<AssetListRes, AssetFilterReq>(AmsApiNames.GET_ASSETS, _filter))?.Rows ?? new();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void OpenRow(TableRowClickEventArgs<AssetRow> e) => Nav.NavigateTo($"assets/{e.Item!.Asset.Id}");
+
+    private async Task EditAsync()
+    {
+        _options ??= await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS);
+        if (_options == null) return;
+        var parameters = new DialogParameters<AssetDialog>
+        {
+            { x => x.Model, new AssetSaveReq { WarrantyMonths = 36, PurchaseDate = DateTime.Today } },
+            { x => x.Options, _options },
+            { x => x.IsNew, true },
+            { x => x.Submit, m => Ui.Do(AmsApiNames.SAVE_ASSET, m) },
+        };
+        if (await Ui.DialogAsync<AssetDialog, bool>("New asset", parameters, MaxWidth.Medium)) await LoadAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        if (await Ui.Call<FileRes, AssetFilterReq>(AmsApiNames.EXPORT_ASSETS, _filter) is { } file) await Ui.DownloadAsync(file);
+    }
+}

@@ -1,0 +1,20 @@
+@* A real HTML form POSTed with a full page load: only an HTTP response can clear the auth cookie. *@
+@inject IJSRuntime JS
+
+<form id="@_id" method="post" action="@AuthConstants.LogoutEndpoint" style="display:none">
+    <input type="hidden" name="reason" value="@_reason" />
+</form>
+
+@code {
+    private readonly string _id = "logout-" + Guid.NewGuid().ToString("N")[..8];
+    private string _reason = "signedout";
+
+    public async Task SubmitAsync(string reason)
+    {
+        _reason = reason;
+        StateHasChanged();
+        await Task.Yield();
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/auth.js");
+        await module.InvokeVoidAsync("submitForm", _id, AuthConstants.AntiforgeryTokenEndpoint);
+    }
+}

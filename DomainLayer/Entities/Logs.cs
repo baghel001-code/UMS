@@ -115,8 +115,11 @@ namespace DomainLayer.Entities
         bool MfaRequiredOutsideOffice,
         int JwtExpiryMinutes,
         int RefreshTokenDays,
-        string AllowedIpRanges)
+        string AllowedIpRanges,
+        bool SingleDeviceLogin = true)
     {
-        public static readonly SecuritySettings Default = new(12, 90, 5, 30, 30, true, true, 15, 7, "10.0.0.0/8, 172.16.0.0/12");
+        // SessionTimeoutMinutes = idle timeout of a sign-in session; JwtExpiryMinutes = access token lifetime;
+        // RefreshTokenDays = absolute session lifetime; SingleDeviceLogin = a new sign-in to an application ends the user's other sessions there.
+        public static readonly SecuritySettings Default = new(12, 90, 5, 30, 30, true, true, 15, 7, "10.0.0.0/8, 172.16.0.0/12", true);
     }
 }

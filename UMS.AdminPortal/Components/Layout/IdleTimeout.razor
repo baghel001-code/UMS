@@ -1,0 +1,139 @@
+@* Signs the admin out after the tenant's idle timeout (UMS security settings), with a one-minute warning.
+   While the admin is active it sends a keep-alive to UMS, which also reveals a session ended elsewhere
+   (signed in on another device, revoked by an administrator). Place once in MainLayout. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject AuthSession Session
+@inject UmsApiClient Api
+@inject NavigationManager Nav
+
+@if (_secondsLeft is { } left)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="10000">
+        <MudPaper Class="ums-login-card pa-6" Elevation="8" Style="max-width:420px">
+            <MudText Typo="Typo.h6" Class="mb-2">Still there?</MudText>
+            <MudText Class="mb-4">You have been inactive for a while. For your security you will be signed out in <b>@left</b> seconds.</MudText>
+            <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+                <MudButton Variant="Variant.Text" OnClick="() => EndAsync(SessionEndReason.SignedOut)">Sign out</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ReportActivity">Stay signed in</MudButton>
+            </MudStack>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@code {
+    private static readonly TimeSpan Warning = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ReportThrottle = TimeSpan.FromSeconds(15);
+
+    private readonly CancellationTokenSource _cts = new();
+    private long _lastActivity = DateTime.UtcNow.Ticks;
+    private DateTime _lastKeepAlive = DateTime.UtcNow;
+    private int? _secondsLeft;
+    private bool _ending;
+    private DotNetObjectReference<IdleTimeout>? _self;
+    private IJSObjectReference? _module, _tracker;
+
+    private TimeSpan Timeout => TimeSpan.FromMinutes(Math.Max(1, Session.IdleTimeoutMinutes));
+    private TimeSpan KeepAliveEvery => TimeSpan.FromTicks(Math.Clamp(Timeout.Ticks / 4, TimeSpan.FromSeconds(30).Ticks, TimeSpan.FromMinutes(5).Ticks));
+    private TimeSpan IdleFor => DateTime.UtcNow - new DateTime(Interlocked.Read(ref _lastActivity), DateTimeKind.Utc);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _ = RunAsync();
+        try
+        {
+            _self = DotNetObjectReference.Create(this);
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", Nav.ToAbsoluteUri("js/idle-timeout.js").ToString());
+            _tracker = await _module.InvokeAsync<IJSObjectReference>("start", _self, new { reportThrottleMs = (int)ReportThrottle.TotalMilliseconds });
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public void ReportActivity()
+    {
+        Interlocked.Exchange(ref _lastActivity, DateTime.UtcNow.Ticks);
+        if (_secondsLeft != null)
+        {
+            _secondsLeft = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+                await InvokeAsync(TickAsync);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task TickAsync()
+    {
+        if (_ending || Session.Token == null) return;
+        var remaining = Timeout - IdleFor;
+        if (remaining <= TimeSpan.Zero)
+        {
+            await EndAsync(SessionEndReason.Idle);
+            return;
+        }
+        int? left = remaining <= Warning ? (int)Math.Ceiling(remaining.TotalSeconds) : null;
+        if (left != _secondsLeft)
+        {
+            _secondsLeft = left;
+            StateHasChanged();
+        }
+        // active recently and due: tell UMS (resets its idle timer, and fails if the session was ended elsewhere)
+        if (IdleFor < KeepAliveEvery && DateTime.UtcNow - _lastKeepAlive >= KeepAliveEvery)
+        {
+            _lastKeepAlive = DateTime.UtcNow;
+            try
+            {
+                var status = await Api.SessionStatusAsync(touch: true);
+                if (!status.Active) Leave(status.Reason.ToString());
+            }
+            catch (ApiException ex) when (ex.Status == System.Net.HttpStatusCode.Unauthorized)
+            {
+                Leave(ex.SessionEnded ?? "Expired");
+            }
+            catch (ApiException) { /* UMS unreachable: try again at the next keep-alive */ }
+        }
+    }
+
+    private async Task EndAsync(SessionEndReason reason)
+    {
+        if (_ending) return;
+        _ending = true;
+        try { await Api.LogoutAsync(reason); } catch (ApiException) { /* already ended */ }
+        Leave(reason.ToString());
+    }
+
+    private void Leave(string reason)
+    {
+        _ending = true;
+        _secondsLeft = null;
+        Session.SignOut(reason);
+        Nav.NavigateTo($"/login?reason={Uri.EscapeDataString(reason)}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        try
+        {
+            if (_tracker != null)
+            {
+                await _tracker.InvokeVoidAsync("dispose");
+                await _tracker.DisposeAsync();
+            }
+            if (_module != null) await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose();
+        _cts.Dispose();
+    }
+}

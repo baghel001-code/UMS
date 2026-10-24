@@ -1,0 +1,56 @@
+
+<MudDialog>
+    <DialogContent>
+        @if (_rows == null)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else if (_rows.Count == 0)
+        {
+            <MudText Class="muted">Nothing is out right now.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="ums-table">
+                <thead><tr><th>@HolderLabel</th><th style="text-align:right">Qty</th><th>Since</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _rows)
+                    {
+                        <tr>
+                            <td>@r.Holder</td>
+                            <td style="text-align:right">@r.Quantity</td>
+                            <td class="muted">@Fmt.DateTime(r.Since)</td>
+                            <td style="text-align:right">
+                                @if (r.CanCheckin)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Login" OnClick="() => CheckinAsync(r)">Check in</MudButton>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close(DialogResult.Ok(_changed))">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string HolderLabel { get; set; } = "Held by";
+    [Parameter] public Func<Task<List<HolderRow>?>> Load { get; set; } = default!;
+    [Parameter] public Func<HolderRow, Task<bool>> Checkin { get; set; } = default!;
+    private List<HolderRow>? _rows;
+    private bool _changed;
+
+    protected override async Task OnInitializedAsync() => _rows = await Load() ?? new();
+
+    private async Task CheckinAsync(HolderRow r)
+    {
+        if (!await Checkin(r)) return;
+        _changed = true;
+        _rows = await Load() ?? new();
+    }
+}

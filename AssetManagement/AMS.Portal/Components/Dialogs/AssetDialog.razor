@@ -1,0 +1,90 @@
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.AssetTag" Label="Asset tag" Variant="Variant.Outlined" Required="true" HelperText="e.g. VMM-LT-1201" /></MudItem>
+            <MudItem xs="12" sm="8"><MudTextField @bind-Value="Model.Name" Label="Name" Variant="Variant.Outlined" Required="true" /></MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="int" @bind-Value="Model.ModelId" Label="Model" Variant="Variant.Outlined" Required="true" AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var m in Options.Models.Where(m => m.CategoryKind == CategoryKind.Asset))
+                    {
+                        <MudSelectItem T="int" Value="m.Id">@m.ManufacturerName @m.Name · @m.CategoryName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Serial" Label="Serial number" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int" @bind-Value="Model.StatusLabelId" Label="Status" Variant="Variant.Outlined" Required="true">
+                    @foreach (var s in Options.Statuses)
+                    {
+                        <MudSelectItem T="int" Value="s.Id">@s.Name (@s.StatusType)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int" @bind-Value="Model.LocationId" Label="Location" Variant="Variant.Outlined" Required="true"
+                           HelperText="Only locations UMS lets you manage">
+                    @foreach (var l in Options.Locations)
+                    {
+                        <MudSelectItem T="int" Value="l.Id">@l.Code · @l.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int?" @bind-Value="Model.DepartmentId" Label="Department" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var d in Options.Departments)
+                    {
+                        <MudSelectItem T="int?" Value="d.Id">@d.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int?" @bind-Value="Model.SupplierId" Label="Supplier" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var s in Options.Suppliers)
+                    {
+                        <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.OrderNumber" Label="Order / PO number" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4"><MudDatePicker @bind-Date="Model.PurchaseDate" Label="Purchase date" Variant="Variant.Outlined" DateFormat="dd MMM yyyy" /></MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.PurchaseCost" Label="Purchase cost (₹)" Variant="Variant.Outlined" Min="0" Format="N0" /></MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.WarrantyMonths" Label="Warranty (months)" Variant="Variant.Outlined" Min="0" /></MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-center">
+                <MudSwitch @bind-Value="Model.Requestable" Color="Color.Primary" Label="Employees can request it" />
+            </MudItem>
+            <MudItem xs="12"><MudTextField @bind-Value="Model.Notes" Label="Notes" Variant="Variant.Outlined" Lines="2" /></MudItem>
+        </MudGrid>
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+            Saving is authorised by UMS with this asset's location, cost and category — e.g. a location-scoped manager can only save assets at their own locations.
+        </MudAlert>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveAsync">@(IsNew ? "Create asset" : "Save changes")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public AssetSaveReq Model { get; set; } = new();
+    [Parameter] public OptionsRes Options { get; set; } = default!;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public Func<AssetSaveReq, Task<bool>> Submit { get; set; } = default!;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        if (IsNew)
+        {
+            if (Model.StatusLabelId == 0) Model.StatusLabelId = Options.Statuses.FirstOrDefault(s => s.StatusType == StatusType.Deployable)?.Id ?? 0;
+            if (Model.LocationId == 0 && Options.Locations.Count == 1) Model.LocationId = Options.Locations[0].Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        if (await Submit(Model)) MudDialog.Close(DialogResult.Ok(true));
+        _busy = false;
+    }
+}

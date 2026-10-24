@@ -20,6 +20,7 @@ builder.Services.AddHttpClient<UmsApiClient>(c => c.BaseAddress = new Uri(apiBas
 builder.Services.AddScoped<AuthSession>();
 builder.Services.AddScoped<TenantState>();
 builder.Services.AddScoped<Ui>();
+builder.Services.AddScoped<ClientInfo>();
 
 var app = builder.Build();
 

@@ -1,0 +1,129 @@
+@* Actions on one asset. Shown only when UMS allowed them for this asset; the service asks UMS again when the action runs. *@
+@inject Ui Ui
+
+@if (Buttons)
+{
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+        @if (Row.CanCheckout)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Logout" OnClick="CheckoutAsync">Check out</MudButton>
+        }
+        @if (Row.CanCheckin)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Login" OnClick="CheckinAsync">Check in</MudButton>
+        }
+        @if (Row.CanAudit)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FactCheck" OnClick="AuditAsync">Audit</MudButton>
+        }
+        @if (Row.CanEdit)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Edit" OnClick="EditAsync">Edit</MudButton>
+        }
+        @if (Row.CanDelete)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync">Delete</MudButton>
+        }
+    </MudStack>
+}
+else if (Row.CanCheckout || Row.CanCheckin || Row.CanAudit || Row.CanEdit || Row.CanDelete)
+{
+    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
+        @if (Row.CanCheckout)
+        {
+            <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="CheckoutAsync">Check out</MudMenuItem>
+        }
+        @if (Row.CanCheckin)
+        {
+            <MudMenuItem Icon="@Icons.Material.Filled.Login" OnClick="CheckinAsync">Check in</MudMenuItem>
+        }
+        @if (Row.CanAudit)
+        {
+            <MudMenuItem Icon="@Icons.Material.Filled.FactCheck" OnClick="AuditAsync">Audit</MudMenuItem>
+        }
+        @if (Row.CanEdit)
+        {
+            <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="EditAsync">Edit</MudMenuItem>
+        }
+        @if (Row.CanDelete)
+        {
+            <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error" OnClick="DeleteAsync">Delete</MudMenuItem>
+        }
+    </MudMenu>
+}
+
+@code {
+    [Parameter, EditorRequired] public AssetRow Row { get; set; } = default!;
+    [Parameter] public bool Buttons { get; set; }
+    [Parameter] public List<SetupItem>? Statuses { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback Deleted { get; set; }
+
+    private AssetView A => Row.Asset;
+    private string Label => $"{A.AssetTag} · {A.Name}";
+
+    private async Task CheckoutAsync()
+    {
+        var p = new DialogParameters<AssignDialog>
+        {
+            { x => x.Item, Label },
+            { x => x.AskDue, true },
+            { x => x.Submit, r => Ui.Do(AmsApiNames.CHECKOUT_ASSET, new AssetCheckoutReq { Id = A.Id, EmpCode = r.EmpCode!, ExpectedCheckin = r.Due, Note = r.Note }) },
+        };
+        if (await Ui.DialogAsync<AssignDialog, bool>("Check out asset", p)) await Changed.InvokeAsync();
+    }
+
+    private async Task CheckinAsync()
+    {
+        var statuses = Statuses ?? (await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS))?.Statuses;
+        var p = new DialogParameters<NoteDialog>
+        {
+            { x => x.Message, $"Check {Label} in from {A.AssignedToName} ({A.AssignedToEmpCode})." },
+            { x => x.Statuses, statuses?.Count > 0 ? statuses : null },
+            { x => x.Verb, "Check in" },
+            { x => x.Submit, r => Ui.Do(AmsApiNames.CHECKIN_ASSET, new AssetCheckinReq { Id = A.Id, StatusLabelId = r.StatusId, Note = r.Note }) },
+        };
+        if (await Ui.DialogAsync<NoteDialog, bool>("Check in asset", p)) await Changed.InvokeAsync();
+    }
+
+    private async Task AuditAsync()
+    {
+        var p = new DialogParameters<NoteDialog>
+        {
+            { x => x.Message, $"Confirm that {Label} was physically verified at {A.LocationCode} today." },
+            { x => x.DateLabel, "Next audit" },
+            { x => x.DefaultDate, DateTime.Today.AddMonths(12) },
+            { x => x.Verb, "Record audit" },
+            { x => x.Submit, r => Ui.Do(AmsApiNames.AUDIT_ASSET, new AssetAuditReq { Id = A.Id, NextAuditDate = r.Date, Note = r.Note }) },
+        };
+        if (await Ui.DialogAsync<NoteDialog, bool>("Audit asset", p)) await Changed.InvokeAsync();
+    }
+
+    private async Task EditAsync()
+    {
+        var options = await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS);
+        if (options == null) return;
+        // the asset's current choices stay selectable even if UMS hides that setup list from this user
+        if (options.Locations.All(l => l.Id != A.LocationId)) options.Locations.Insert(0, new SetupItem { Id = A.LocationId, Code = A.LocationCode, Name = A.LocationName });
+        if (options.Models.All(m => m.Id != A.ModelId))
+            options.Models.Insert(0, new SetupItem { Id = A.ModelId, Name = A.ModelName, CategoryKind = CategoryKind.Asset, CategoryName = A.CategoryName, ManufacturerName = A.ManufacturerName });
+        if (options.Statuses.All(s => s.Id != A.StatusLabelId)) options.Statuses.Insert(0, new SetupItem { Id = A.StatusLabelId, Name = A.StatusName, StatusType = A.StatusType });
+        var p = new DialogParameters<AssetDialog>
+        {
+            { x => x.Model, AssetSaveReq.From(A) },
+            { x => x.Options, options },
+            { x => x.Submit, m => Ui.Do(AmsApiNames.SAVE_ASSET, m) },
+        };
+        if (await Ui.DialogAsync<AssetDialog, bool>($"Edit {A.AssetTag}", p, MaxWidth.Medium)) await Changed.InvokeAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (!await Ui.ConfirmAsync("Delete asset", $"Delete {Label}? Its maintenance records, requests and licence/component links are removed too.", "Delete")) return;
+        if (await Ui.Do(AmsApiNames.DELETE_ASSET, new IdReq { Id = A.Id }))
+        {
+            if (Deleted.HasDelegate) await Deleted.InvokeAsync();
+            else await Changed.InvokeAsync();
+        }
+    }
+}

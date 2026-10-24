@@ -1,0 +1,150 @@
+@page "/assets/{Id:int}"
+@inject Ui Ui
+@inject NavigationManager Nav
+
+<PageTitle>@(_d?.Asset?.Asset.AssetTag ?? "Asset") · VMM Assets</PageTitle>
+
+@if (_denied != null)
+{
+    <Denied What="this asset" Reason="@_denied" />
+}
+else if (_d == null)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+}
+else
+{
+    var a = _d.Asset!.Asset;
+    <PageHeader Title="@($"{a.AssetTag} · {a.Name}")" Subtitle="@($"{a.ManufacturerName} {a.ModelName} · {a.CategoryName} · {a.LocationName}")">
+        <Actions>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ArrowBack" Href="assets">All assets</MudButton>
+            <AssetActions Row="_d.Asset" Buttons="true" Changed="LoadAsync" Deleted="@(() => Nav.NavigateTo("assets"))" />
+        </Actions>
+    </PageHeader>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="8">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head">
+                    <MudText Typo="Typo.h6">Details</MudText>
+                    <MudChip T="string" Color="@Fmt.StatusColor(a.StatusType)" Variant="Variant.Text" Size="Size.Small">@a.StatusName</MudChip>
+                </div>
+                <div class="ums-card-body">
+                    <div class="ams-facts">
+                        <div><small>Checked out to</small><span>@(a.IsCheckedOut ? $"{a.AssignedToName} ({a.AssignedToEmpCode})" : "In stock")</span></div>
+                        <div><small>Since</small><span>@Fmt.DateTime(a.AssignedAt)</span></div>
+                        <div><small>Expected check-in</small><span>@Fmt.Date(a.ExpectedCheckin)</span></div>
+                        <div><small>Serial</small><span class="mono">@(a.Serial ?? "—")</span></div>
+                        <div><small>Location</small><span>@a.LocationCode · @a.Region</span></div>
+                        <div><small>Department</small><span>@(a.DepartmentName ?? "—")</span></div>
+                        <div><small>Supplier</small><span>@(a.SupplierName ?? "—")</span></div>
+                        <div><small>Order number</small><span>@(a.OrderNumber ?? "—")</span></div>
+                        <div><small>Purchased</small><span>@Fmt.Date(a.PurchaseDate)</span></div>
+                        <div><small>Cost</small><span>@Fmt.Money(a.PurchaseCost)</span></div>
+                        <div><small>Current value</small><span>@Fmt.Money(_d.CurrentValue)</span></div>
+                        <div><small>Warranty until</small><span>@Fmt.Date(a.WarrantyExpires)</span></div>
+                        <div><small>Last audit</small><span>@Fmt.Date(a.LastAuditDate)</span></div>
+                        <div><small>Next audit</small><span>@Fmt.Date(a.NextAuditDate)</span></div>
+                        <div><small>Requestable</small><span>@(a.Requestable ? "Yes" : "No")</span></div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(a.Notes))
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-4 muted">@a.Notes</MudText>
+                    }
+                </div>
+            </MudPaper>
+
+            <MudPaper Class="ums-card mt-4" Elevation="0">
+                <MudTabs Elevation="0" PanelClass="pa-4" ApplyEffectsToContainer="true">
+                    <MudTabPanel Text="@($"Maintenance ({_d.Maintenances.Count})")">
+                        @if (_d.CanMaintain)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Build" Class="mb-3" OnClick="AddMaintenanceAsync">Log maintenance</MudButton>
+                        }
+                        <MudSimpleTable Dense="true" Elevation="0" Class="ums-table">
+                            <thead><tr><th>Type</th><th>Title</th><th>Provider</th><th>Start</th><th>Completed</th><th style="text-align:right">Cost</th></tr></thead>
+                            <tbody>
+                                @foreach (var m in _d.Maintenances)
+                                {
+                                    <tr><td>@m.MaintenanceType</td><td>@m.Title @(m.IsWarranty ? "(warranty)" : "")</td><td>@m.SupplierName</td><td>@Fmt.Date(m.StartDate)</td><td>@Fmt.Date(m.CompletionDate)</td><td style="text-align:right">@Fmt.Money(m.Cost)</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudTabPanel>
+                    <MudTabPanel Text="@($"Licences ({_d.Licenses.Count})")">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="ums-table">
+                            <thead><tr><th>Licence</th><th>Seat holder</th><th>Since</th></tr></thead>
+                            <tbody>
+                                @foreach (var s in _d.Licenses)
+                                {
+                                    <tr><td>@s.LicenseName</td><td>@(s.AssignedToName ?? "this asset")</td><td>@Fmt.DateTime(s.AssignedAt)</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudTabPanel>
+                    <MudTabPanel Text="@($"Components ({_d.Components.Count})")">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="ums-table">
+                            <thead><tr><th>Component</th><th>Qty</th><th>Installed</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in _d.Components)
+                                {
+                                    <tr><td>@c.ItemName</td><td>@c.Quantity</td><td>@Fmt.DateTime(c.AssignedAt)</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="4">
+            <MudPaper Class="ums-card" Elevation="0">
+                <div class="ums-card-head"><MudText Typo="Typo.h6">History</MudText></div>
+                <div class="ums-card-body">
+                    <ul class="ams-timeline">
+                        @foreach (var h in _d.History)
+                        {
+                            <li>
+                                <b>@Fmt.Action(h.Action)</b> @(h.Target == null ? "" : "→ " + h.Target)
+                                <div><small>@Fmt.DateTime(h.At) · by @h.ActorName</small></div>
+                                @if (h.Note != null)
+                                {
+                                    <div class="muted" style="font-size:12.5px">“@h.Note”</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private AssetDetailRes? _d;
+    private string? _denied;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _d = await Ui.Call<AssetDetailRes, IdReq>(AmsApiNames.GET_ASSET, new IdReq { Id = Id }, r => _denied = r);
+        StateHasChanged();
+    }
+
+    private async Task AddMaintenanceAsync()
+    {
+        var options = await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS);
+        if (options == null) return;
+        var p = new DialogParameters<MaintenanceDialog>
+        {
+            { x => x.Model, new MaintenanceSaveReq { AssetId = Id } },
+            { x => x.Options, options },
+            { x => x.IsNew, true },
+            { x => x.AssetLabel, $"{_d!.Asset!.Asset.AssetTag} · {_d.Asset.Asset.Name}" },
+            { x => x.Submit, m => Ui.Do(AmsApiNames.SAVE_MAINTENANCE, m, "Maintenance logged") },
+        };
+        if (await Ui.DialogAsync<MaintenanceDialog, bool>("Log maintenance", p, MaxWidth.Medium)) await LoadAsync();
+    }
+}

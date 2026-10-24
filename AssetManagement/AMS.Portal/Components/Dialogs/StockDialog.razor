@@ -1,0 +1,68 @@
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="8"><MudTextField @bind-Value="Model.Name" Label="Name" Variant="Variant.Outlined" Required="true" /></MudItem>
+            <MudItem xs="12" sm="4"><MudTextField @bind-Value="Model.ModelNumber" Label="Model / part number" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int?" @bind-Value="Model.CategoryId" Label="Category" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var c in Options.Categories.Where(c => c.CategoryKind == CategoryKind))
+                    {
+                        <MudSelectItem T="int?" Value="c.Id">@c.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int?" @bind-Value="Model.ManufacturerId" Label="Manufacturer" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var m in Options.Manufacturers)
+                    {
+                        <MudSelectItem T="int?" Value="m.Id">@m.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="int" @bind-Value="Model.LocationId" Label="Stored at" Variant="Variant.Outlined" Required="true">
+                    @foreach (var l in Options.Locations)
+                    {
+                        <MudSelectItem T="int" Value="l.Id">@l.Code · @l.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.Quantity" Label="@(Kind == StockKind.Consumable ? "Quantity in stock" : "Total quantity")" Variant="Variant.Outlined" Min="0" /></MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.MinQuantity" Label="Re-order level" Variant="Variant.Outlined" Min="0" /></MudItem>
+            <MudItem xs="12" sm="4"><MudNumericField @bind-Value="Model.UnitCost" Label="Unit cost (₹)" Variant="Variant.Outlined" Min="0" Format="N0" /></MudItem>
+            @if (Kind == StockKind.Component)
+            {
+                <MudItem xs="12" sm="6"><MudTextField @bind-Value="Model.Serial" Label="Serial (batch)" Variant="Variant.Outlined" /></MudItem>
+            }
+            <MudItem xs="12"><MudTextField @bind-Value="Model.Notes" Label="Notes" Variant="Variant.Outlined" Lines="2" /></MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveAsync">@(IsNew ? "Create" : "Save changes")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public StockSaveReq Model { get; set; } = new();
+    [Parameter] public StockKind Kind { get; set; }
+    [Parameter] public OptionsRes Options { get; set; } = default!;
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public Func<StockSaveReq, Task<bool>> Submit { get; set; } = default!;
+    private bool _busy;
+
+    private CategoryKind CategoryKind => Kind switch { StockKind.Accessory => CategoryKind.Accessory, StockKind.Consumable => CategoryKind.Consumable, _ => CategoryKind.Component };
+
+    protected override void OnInitialized()
+    {
+        if (IsNew && Model.LocationId == 0 && Options.Locations.Count > 0) Model.LocationId = Options.Locations[0].Id;
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        if (await Submit(Model)) MudDialog.Close(DialogResult.Ok(true));
+        _busy = false;
+    }
+}

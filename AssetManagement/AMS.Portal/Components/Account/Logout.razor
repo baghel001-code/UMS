@@ -1,0 +1,22 @@
+@page "/account/logout"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>Signing out · VMM Assets</PageTitle>
+<LogoutForm @ref="_form" />
+<MudPaper Class="ums-login-card pa-8" Elevation="0">
+    <MudStack AlignItems="AlignItems.Center" Spacing="3">
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        <MudText>Signing out…</MudText>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [SupplyParameterFromQuery(Name = "reason")] public string? Reason { get; set; }
+    private LogoutForm? _form;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _form != null) await _form.SubmitAsync(Reason ?? "signedout");
+    }
+}

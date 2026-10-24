@@ -28,7 +28,12 @@
         "DebugTarget": "http"
       },
       {
-        "Path": "AssetManagement\\AMS.Web\\AMS.Web.csproj",
+        "Path": "AssetManagement\\AMS.Api\\AMS.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "AssetManagement\\AMS.Portal\\AMS.Portal.csproj",
         "Action": "Start",
         "DebugTarget": "http"
       }

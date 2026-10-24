@@ -74,6 +74,7 @@ namespace Infrastructure.DependencyInjection
                 services.AddScoped<IPolicyRepository, SqlPolicyRepository>();
                 services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
                 services.AddScoped<ILogRepository, SqlLogRepository>();
+                services.AddScoped<IUserSessionRepository, SqlSessionRepository>();
             }
             else
             {
@@ -91,6 +92,7 @@ namespace Infrastructure.DependencyInjection
                 services.AddScoped<IPolicyRepository, InMemoryPolicyRepository>();
                 services.AddScoped<IScheduleRepository, InMemoryScheduleRepository>();
                 services.AddScoped<ILogRepository, InMemoryLogRepository>();
+                services.AddScoped<IUserSessionRepository, InMemorySessionRepository>();
             }
 
             var tenantOptions = new TenantOptions
@@ -104,6 +106,7 @@ namespace Infrastructure.DependencyInjection
             services.AddScoped<ICurrentTenantService, CurrentTenantService>();
             services.AddScoped<IAuditService, AuditService>();
             services.AddScoped<IAccessContextProvider, AccessContextProvider>();
+            services.AddSingleton<ISessionValidator, SessionValidator>();
             services.AddSingleton<IdentityService>();
             services.AddSingleton<ITokenIssuer>(sp => sp.GetRequiredService<IdentityService>());
 

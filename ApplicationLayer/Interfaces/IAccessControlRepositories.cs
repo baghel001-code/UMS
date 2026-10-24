@@ -75,4 +75,17 @@ namespace ApplicationLayer.Interfaces
         Task<ExceptionLog?> GetExceptionAsync(Guid id, CancellationToken ct = default);
         Task SaveExceptionAsync(ExceptionLog log, CancellationToken ct = default);
     }
+
+    public interface IUserSessionRepository
+    {
+        Task<UserSession?> GetAsync(Guid id, CancellationToken ct = default);
+        Task SaveAsync(UserSession session, CancellationToken ct = default);
+        /// <summary>Sessions of a user that are not ended (expiry is not checked).</summary>
+        Task<IReadOnlyList<UserSession>> ListOpenAsync(Guid userId, string? appCode = null, CancellationToken ct = default);
+        /// <summary>Newest first.</summary>
+        Task<IReadOnlyList<UserSession>> ListAsync(Guid tenantId, bool openOnly, int take, CancellationToken ct = default);
+
+        Task<LoginAttempt?> GetLoginAttemptAsync(string login, CancellationToken ct = default);
+        Task SaveLoginAttemptAsync(LoginAttempt attempt, CancellationToken ct = default);
+    }
 }

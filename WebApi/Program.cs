@@ -83,13 +83,37 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = System.Security.Claims.ClaimTypes.Name,
             RoleClaimType = System.Security.Claims.ClaimTypes.Role
         };
+        // a token is only as good as its sign-in session: signed out, replaced by a sign-in on another device, idle or revoked → 401
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async ctx =>
+            {
+                if (!Guid.TryParse(ctx.Principal?.FindFirst(IdentityService.SessionClaim)?.Value, out var sid))
+                {
+                    ctx.Fail("The token is not bound to a sign-in session.");
+                    return;
+                }
+                var reason = await ctx.HttpContext.RequestServices.GetRequiredService<ISessionValidator>().CheckAsync(sid, ctx.HttpContext.RequestAborted);
+                if (reason != DomainLayer.Entities.SessionEndReason.None)
+                {
+                    ctx.HttpContext.Items[SessionEndHeader] = reason.ToString();
+                    ctx.Fail($"Session ended: {reason}");
+                }
+            },
+            OnChallenge = ctx =>
+            {
+                // clients show why (e.g. "Replaced": signed in on another device)
+                if (ctx.HttpContext.Items[SessionEndHeader] is string reason) ctx.Response.Headers[SessionEndHeader] = reason;
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 
 // browser-based clients on other origins (the Blazor Server admin portal calls the API server-side and needs no CORS)
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options => options.AddPolicy("AdminPanel", policy =>
-    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders(Program.SessionEndHeader)));
 
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -143,3 +167,9 @@ app.UseAuthorization();
 app.MapControllers();
 //app.MapGet("/", () => "API is running...");
 app.Run();
+
+public partial class Program
+{
+    /// <summary>Response header naming why the caller's session ended (SessionEndReason).</summary>
+    public const string SessionEndHeader = "X-Session-End";
+}

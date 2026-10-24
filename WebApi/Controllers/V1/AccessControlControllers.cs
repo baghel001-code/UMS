@@ -6,6 +6,7 @@ using ApplicationLayer.Features.AccessControl.Logs;
 using ApplicationLayer.Features.AccessControl.Policies;
 using ApplicationLayer.Features.AccessControl.Roles;
 using ApplicationLayer.Features.AccessControl.Schedules;
+using ApplicationLayer.Features.AccessControl.Sessions;
 using ApplicationLayer.Features.AccessControl.Tenants;
 using ApplicationLayer.Features.AccessControl.UserAccounts;
 using ApplicationLayer.Interfaces;
@@ -47,15 +48,78 @@ namespace WebApi.Controllers.V1
     {
         public AuthController(IMediator mediator, ICurrentTenantService tenant) : base(mediator, tenant) { }
 
-        public record LoginRequest(string Email, string Password);
+        /// <param name="AppCode">Application being signed in to (default UMS). Single-device login and idle timeout apply per application.</param>
+        /// <param name="ClientIp">Browser address when a server-side portal signs the user in on its behalf.</param>
+        public record LoginRequest(string Email, string Password, string? AppCode = null, string? ClientIp = null, string? UserAgent = null);
+        public record RefreshRequest(string RefreshToken);
+        public record LogoutRequest(SessionEndReason Reason = SessionEndReason.SignedOut);
 
-        /// <summary>Sign in with email + password; returns a JWT carrying the user id and tenant.</summary>
+        private ClientInfoDto Client(string? ip, string? userAgent) =>
+            new(string.IsNullOrWhiteSpace(ip) ? HttpContext.Connection.RemoteIpAddress?.ToString() : ip,
+                string.IsNullOrWhiteSpace(userAgent) ? Request.Headers.UserAgent.ToString() : userAgent);
+
+        /// <summary>401 with a machine-readable "code" (auth.invalid, auth.locked, session.replaced, …) clients can act on.</summary>
+        private ObjectResult Unauthorized(Error error) => new(new ProblemDetails
+        {
+            Title = error.Message,
+            Status = StatusCodes.Status401Unauthorized,
+            Extensions = { ["code"] = error.Code }
+        }) { StatusCode = StatusCodes.Status401Unauthorized };
+
+        /// <summary>Sign in: returns a short-lived access token (JWT with "sid" and "app") and a rotating refresh token.</summary>
         [HttpPost("login")]
         [AllowAnonymous]
         public async Task<ActionResult<LoginResultDto>> Login(LoginRequest body, CancellationToken ct)
         {
-            var result = await Mediator.Send(new LoginCommand(body.Email, body.Password), ct);
-            return result.IsSuccess ? Ok(result.Value) : Problem(title: result.Error.Message, statusCode: StatusCodes.Status401Unauthorized);
+            var result = await Mediator.Send(new LoginCommand(body.Email, body.Password, body.AppCode, Client(body.ClientIp, body.UserAgent)), ct);
+            return result.IsSuccess ? Ok(result.Value) : Unauthorized(result.Error);
+        }
+
+        /// <summary>New token pair for a refresh token. The old refresh token stops working; presenting it again ends the session.</summary>
+        [HttpPost("refresh")]
+        [AllowAnonymous]
+        public async Task<ActionResult<LoginResultDto>> Refresh(RefreshRequest body, CancellationToken ct)
+        {
+            var result = await Mediator.Send(new RefreshSessionCommand(body.RefreshToken), ct);
+            return result.IsSuccess ? Ok(result.Value) : Unauthorized(result.Error);
+        }
+
+        /// <summary>Is my session still active? touch=true records user activity (portal keep-alive) and resets the idle timer.</summary>
+        [HttpGet("session")]
+        [Authorize]
+        public async Task<ActionResult<SessionStatusDto>> Session([FromQuery] bool touch, CancellationToken ct) =>
+            await Mediator.Send(new GetSessionStatusQuery(CurrentSession(), touch), ct);
+
+        /// <summary>Ends my session (reason SignedOut or Idle).</summary>
+        [HttpPost("logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout(LogoutRequest? body, CancellationToken ct)
+        {
+            await Mediator.Send(new LogoutCommand(CurrentSession(), body?.Reason ?? SessionEndReason.SignedOut), ct);
+            return NoContent();
+        }
+
+        private Guid CurrentSession() =>
+            Guid.TryParse(User.FindFirst(Infrastructure.Identity.IdentityService.SessionClaim)?.Value, out var sid)
+                ? sid
+                : throw new UnauthorizedAccessException("The token has no session.");
+    }
+
+    /// <summary>Sign-in sessions of the tenant: who is signed in where, and ending a session (e.g. a lost device).</summary>
+    [Route("api/v1/sessions")]
+    public class SessionsController : AccessControlControllerBase
+    {
+        public SessionsController(IMediator mediator, ICurrentTenantService tenant) : base(mediator, tenant) { }
+
+        [HttpGet, RequirePermission("SETUP", "SESSION", A.View)]
+        public async Task<ActionResult<List<UserSessionDto>>> List([FromQuery] bool activeOnly = true, [FromQuery] int take = 500, CancellationToken ct = default) =>
+            await Mediator.Send(new ListSessionsQuery(Tenant.TenantId, activeOnly, take), ct);
+
+        [HttpDelete("{id:guid}"), RequirePermission("SETUP", "SESSION", A.Delete)]
+        public async Task<IActionResult> Revoke(Guid id, CancellationToken ct)
+        {
+            await Mediator.Send(new RevokeSessionCommand(Tenant.TenantId, id), ct);
+            return NoContent();
         }
     }
 

@@ -1,0 +1,121 @@
+@page "/sessions"
+@inherits TenantPage
+@inject TenantState Tenant
+@inject AuthSession Session
+@inject IDialogService Dialogs
+
+<PageTitle>Active Sessions · VMM UMS</PageTitle>
+
+<PageHeader Title="Active Sessions" Subtitle="@($"Who is signed in to which application, from where ({Tenant.Current?.Name}). End a session for a lost device or a leaver; the user is signed out within seconds.")">
+    <Actions>
+        <MudSwitch T="bool" Value="_activeOnly" ValueChanged="v => { _activeOnly = v; _ = ReloadAsync(); }" Color="Color.Primary" Label="Active only" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+    </Actions>
+</PageHeader>
+
+<MudGrid Spacing="3" Class="mb-2">
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="ums-card ums-stat" Elevation="0">
+            <div class="ums-stat-ico"><MudIcon Icon="@Icons.Material.Filled.Devices" /></div>
+            <div><div class="label">Active sessions</div><div class="value">@_rows.Count(r => r.Active)</div><div class="sub">@_rows.Where(r => r.Active).Select(r => r.UserId).Distinct().Count() people</div></div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="ums-card ums-stat" Elevation="0">
+            <div class="ums-stat-ico"><MudIcon Icon="@Icons.Material.Filled.Apps" /></div>
+            <div><div class="label">Applications in use</div><div class="value">@_rows.Where(r => r.Active).Select(r => r.AppCode).Distinct().Count()</div><div class="sub">@string.Join(", ", _rows.Where(r => r.Active).Select(r => r.AppCode).Distinct().Take(6))</div></div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="ums-card ums-stat" Elevation="0">
+            <div class="ums-stat-ico"><MudIcon Icon="@Icons.Material.Filled.PhonelinkErase" /></div>
+            <div><div class="label">Replaced by another device</div><div class="value">@_rows.Count(r => r.EndReason == SessionEndReason.Replaced)</div><div class="sub">single-device login</div></div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <MudTable T="UserSessionDto" Items="_rows" Loading="Loading" Hover="true" Dense="true" Elevation="0" Class="ums-table" RowsPerPage="50" Filter="Matches">
+        <ToolBarContent>
+            <MudTextField @bind-Value="_search" Placeholder="Search user, app, IP…" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Immediate="true" Style="max-width:360px" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>User</MudTh>
+            <MudTh>Application</MudTh>
+            <MudTh>Device</MudTh>
+            <MudTh>Signed in</MudTh>
+            <MudTh>Last activity</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh Style="width:1%"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><b>@context.UserName</b><div class="muted" style="font-size:12px">@context.EmpCode</div></MudTd>
+            <MudTd><MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">@context.AppCode</MudChip></MudTd>
+            <MudTd><span class="mono">@context.IpAddress</span><div class="muted" style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@context.UserAgent">@Browser(context.UserAgent)</div></MudTd>
+            <MudTd>@Local(context.CreatedAt)</MudTd>
+            <MudTd>@Local(context.LastSeenAt)</MudTd>
+            <MudTd>
+                @if (context.Active)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Icon="@Icons.Material.Filled.Circle">Active</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@Describe(context.EndReason)</MudChip>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.Active)
+                {
+                    <MudTooltip Text="@(context.Id == Session.SessionId ? "This is your own session" : "End this session")">
+                        <MudIconButton Icon="@Icons.Material.Filled.Logout" Size="Size.Small" Color="Color.Error" Disabled="@(context.Id == Session.SessionId)"
+                                       OnClick="() => RevokeAsync(context)" />
+                    </MudTooltip>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="muted pa-4">No sessions.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100, 200 }" /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<UserSessionDto> _rows = new();
+    private bool _activeOnly = true;
+    private string? _search;
+
+    protected override async Task LoadAsync() => _rows = await Api.SessionsAsync(_activeOnly);
+
+    private bool Matches(UserSessionDto s) => string.IsNullOrWhiteSpace(_search) ||
+        $"{s.UserName} {s.EmpCode} {s.AppCode} {s.IpAddress} {s.UserAgent}".Contains(_search, StringComparison.OrdinalIgnoreCase);
+
+    private static string Local(DateTime utc) => Fmt.DateTime(ApplicationLayer.Common.LocalClock.ToLocal(utc));
+
+    private static string Browser(string ua) =>
+        string.IsNullOrWhiteSpace(ua) ? "—"
+        : ua.Contains("Edg/") ? "Edge" : ua.Contains("Chrome/") ? "Chrome" : ua.Contains("Firefox/") ? "Firefox" : ua.Contains("Safari/") ? "Safari"
+        : ua.Length > 40 ? ua[..40] + "…" : ua;
+
+    private static string Describe(SessionEndReason r) => r switch
+    {
+        SessionEndReason.SignedOut => "Signed out",
+        SessionEndReason.Replaced => "Other device",
+        SessionEndReason.Idle => "Idle timeout",
+        SessionEndReason.Expired => "Expired",
+        SessionEndReason.RevokedByAdmin => "Ended by admin",
+        SessionEndReason.TokenReuse => "Token reuse",
+        SessionEndReason.AccountDisabled => "Account disabled",
+        _ => r.ToString()
+    };
+
+    private async Task RevokeAsync(UserSessionDto s)
+    {
+        if (await Dialogs.ShowMessageBox("End session", $"Sign {s.UserName} out of {s.AppCode} on {s.IpAddress}?", yesText: "End session", cancelText: "Cancel") != true) return;
+        if (await Ui.Run(() => Api.RevokeSessionAsync(s.Id)))
+        {
+            Ui.Ok($"{s.UserName}'s session ended");
+            await ReloadAsync();
+        }
+    }
+}

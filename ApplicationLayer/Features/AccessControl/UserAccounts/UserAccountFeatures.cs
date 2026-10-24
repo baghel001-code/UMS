@@ -306,39 +306,4 @@ namespace ApplicationLayer.Features.AccessControl.UserAccounts
             return Result<Guid>.Success(user.Id);
         }
     }
-
-    public record LoginCommand(string Email, string Password) : IRequest<Result<LoginResultDto>>;
-
-    public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<LoginResultDto>>
-    {
-        private readonly IUserAccountRepository _users;
-        private readonly ITenantRepository _tenants;
-        private readonly IPasswordHasher _hasher;
-        private readonly ITokenIssuer _tokens;
-        private readonly TimeProvider _time;
-
-        public LoginCommandHandler(IUserAccountRepository users, ITenantRepository tenants, IPasswordHasher hasher, ITokenIssuer tokens, TimeProvider time)
-        {
-            _users = users;
-            _tenants = tenants;
-            _hasher = hasher;
-            _tokens = tokens;
-            _time = time;
-        }
-
-        public async Task<Result<LoginResultDto>> Handle(LoginCommand request, CancellationToken ct)
-        {
-            var invalid = Result<LoginResultDto>.Failure(new Error("auth.invalid", "Invalid email or password."));
-            var user = await _users.GetByEmailAsync(request.Email.Trim(), ct);
-            if (user?.PasswordHash is null || !_hasher.Verify(user.PasswordHash, request.Password)) return invalid;
-
-            var tenant = await _tenants.GetAsync(user.TenantId, ct);
-            if (tenant is not { IsActive: true } || !user.IsUsableOn(LocalClock.Today(_time)))
-                return Result<LoginResultDto>.Failure(new Error("auth.disabled", "This account is disabled."));
-
-            user.RecordLogin(LocalClock.Now(_time));
-            await _users.SaveAsync(user, ct);
-            return Result<LoginResultDto>.Success(new LoginResultDto(_tokens.IssueToken(user), user.Id, user.TenantId, user.Name, user.Email.Value, user.EmpCode));
-        }
-    }
 }

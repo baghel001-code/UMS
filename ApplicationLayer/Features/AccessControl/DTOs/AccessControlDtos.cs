@@ -1,3 +1,4 @@
+using DomainLayer.Entities;
 using DomainLayer.Enumerations;
 using System.Text.Json;
 
@@ -48,5 +49,18 @@ namespace ApplicationLayer.Features.AccessControl.DTOs
     public record AccessRequestDto(Guid? UserId, string? EmpCode, string App, string Module, string Resource, AccessAction Action,
         Dictionary<string, string>? ResourceAttributes, AccessEnvironmentDto? Env, bool Log = true, string? Route = null);
 
-    public record LoginResultDto(string Token, Guid UserId, Guid TenantId, string FullName, string Email, string EmpCode);
+    /// <summary>
+    /// Result of sign-in and of refresh. The access token is short-lived (JwtExpiryMinutes); the refresh token rotates on every use and
+    /// keeps the session alive until RefreshTokenDays. IdleTimeoutMinutes tells the client when to sign an inactive user out.
+    /// </summary>
+    public record LoginResultDto(string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken, DateTime SessionExpiresAt, Guid SessionId,
+        Guid UserId, Guid TenantId, string FullName, string Email, string EmpCode, string AppCode, int IdleTimeoutMinutes, bool EndedOtherSessions);
+
+    /// <summary>Who is signing in from where (stored on the session, shown to administrators).</summary>
+    public record ClientInfoDto(string? Ip, string? UserAgent);
+
+    public record SessionStatusDto(Guid SessionId, bool Active, SessionEndReason Reason, DateTime ExpiresAt, DateTime LastSeenAt, int IdleTimeoutMinutes);
+
+    public record UserSessionDto(Guid Id, Guid UserId, string UserName, string EmpCode, string AppCode, string IpAddress, string UserAgent,
+        DateTime CreatedAt, DateTime LastSeenAt, DateTime ExpiresAt, DateTime? EndedAt, SessionEndReason EndReason, bool Active);
 }

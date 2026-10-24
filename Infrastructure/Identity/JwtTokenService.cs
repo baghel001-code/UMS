@@ -1,34 +1,38 @@
 ﻿using Infrastructure.Options;
 using Microsoft.IdentityModel.Tokens;
-using System;
-using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
 using System.Security.Claims;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace Infrastructure.Identity
 {
     public class JwtTokenService
     {
         private readonly JwtOptions _opts;
+        private readonly TimeProvider _time;
 
+        public JwtTokenService(JwtOptions opts, TimeProvider? time = null)
+        {
+            _opts = opts;
+            _time = time ?? TimeProvider.System;
+        }
 
-        public JwtTokenService(JwtOptions opts) => _opts = opts;
+        public string GenerateToken(IEnumerable<Claim> claims) => GenerateToken(claims, TimeSpan.FromMinutes(_opts.ExpiryMinutes)).Token;
 
-
-        public string GenerateToken(IEnumerable<Claim> claims)
+        public (string Token, DateTime ExpiresAtUtc) GenerateToken(IEnumerable<Claim> claims, TimeSpan lifetime)
         {
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_opts.Secret));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var now = _time.GetUtcNow().UtcDateTime;
+            var expires = now + lifetime;
             var token = new JwtSecurityToken(
-            issuer: _opts.Issuer,
-            audience: _opts.Audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_opts.ExpiryMinutes),
-            signingCredentials: creds);
-            return new JwtSecurityTokenHandler().WriteToken(token);
+                issuer: _opts.Issuer,
+                audience: _opts.Audience,
+                claims: claims,
+                notBefore: now,
+                expires: expires,
+                signingCredentials: creds);
+            return (new JwtSecurityTokenHandler().WriteToken(token), expires);
         }
     }
 }

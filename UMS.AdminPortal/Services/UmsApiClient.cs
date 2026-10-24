@@ -16,35 +16,90 @@ namespace UMS.AdminPortal.Services
     public class ApiException : Exception
     {
         public HttpStatusCode Status { get; }
-        public ApiException(HttpStatusCode status, string message) : base(message) => Status = status;
+        /// <summary>Set when UMS ended the caller's session (Replaced, Idle, RevokedByAdmin…).</summary>
+        public string? SessionEnded { get; }
+        public ApiException(HttpStatusCode status, string message, string? sessionEnded = null) : base(message)
+        {
+            Status = status;
+            SessionEnded = sessionEnded;
+        }
     }
 
-    /// <summary>Signed-in admin for this browser session (one per Blazor circuit).</summary>
+    /// <summary>
+    /// Signed-in admin for this browser session (one per Blazor circuit). Holds the UMS token pair; the access token is short-lived and is
+    /// renewed with the rotating refresh token. <see cref="Changed"/> fires after a refresh so the layout can store the new refresh token.
+    /// </summary>
     public class AuthSession
     {
+        private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
         public string? Token { get; private set; }
+        public string? RefreshToken { get; private set; }
+        public Guid? SessionId { get; private set; }
         public string? FullName { get; private set; }
         public Guid? HomeTenantId { get; private set; }
+        public int IdleTimeoutMinutes { get; private set; } = 30;
+        /// <summary>Why UMS ended the session (shown on the sign-in page).</summary>
+        public string? EndReason { get; private set; }
+        public event Action? Changed;
+
+        public record Stored(string Token, string RefreshToken, Guid SessionId, string FullName, Guid TenantId, int IdleTimeoutMinutes);
+
+        public Stored? ToStored() => Token == null || RefreshToken == null || SessionId == null
+            ? null
+            : new Stored(Token, RefreshToken, SessionId.Value, FullName ?? "", HomeTenantId ?? Guid.Empty, IdleTimeoutMinutes);
 
         public void SignIn(LoginResultDto login)
         {
-            Token = login.Token;
+            Token = login.AccessToken;
+            RefreshToken = login.RefreshToken;
+            SessionId = login.SessionId;
             FullName = login.FullName;
             HomeTenantId = login.TenantId;
+            IdleTimeoutMinutes = login.IdleTimeoutMinutes;
+            EndReason = null;
         }
 
-        public void Restore(string token, string fullName, Guid tenantId)
+        public void Restore(Stored s)
         {
-            Token = token;
-            FullName = fullName;
-            HomeTenantId = tenantId;
+            Token = s.Token;
+            RefreshToken = s.RefreshToken;
+            SessionId = s.SessionId;
+            FullName = s.FullName;
+            HomeTenantId = s.TenantId;
+            IdleTimeoutMinutes = s.IdleTimeoutMinutes;
         }
 
-        public void SignOut()
+        public void SignOut(string? reason = null)
         {
             Token = null;
+            RefreshToken = null;
+            SessionId = null;
             FullName = null;
             HomeTenantId = null;
+            EndReason = reason;
+        }
+
+        /// <summary>Renews the token pair once even when several calls hit 401 together (an old refresh token must never be sent twice).</summary>
+        public async Task<bool> RefreshAsync(string expiredToken, Func<string, Task<LoginResultDto?>> refresh)
+        {
+            await _refreshGate.WaitAsync();
+            try
+            {
+                if (Token != expiredToken) return Token != null;   // another call already refreshed
+                if (RefreshToken == null) return false;
+                var result = await refresh(RefreshToken);
+                if (result == null) return false;
+                Token = result.AccessToken;
+                RefreshToken = result.RefreshToken;
+                IdleTimeoutMinutes = result.IdleTimeoutMinutes;
+            }
+            finally
+            {
+                _refreshGate.Release();
+            }
+            Changed?.Invoke();
+            return true;
         }
     }
 
@@ -91,39 +146,74 @@ namespace UMS.AdminPortal.Services
 
         private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body = null, bool withTenant = true)
         {
+            var token = _session.Token;
+            using var res = await SendRawAsync(method, path, body, withTenant, token);
+            // the access token expired: renew it with the refresh token and try once more
+            if (res.StatusCode == HttpStatusCode.Unauthorized && token != null && !res.Headers.Contains(SessionEndHeader))
+            {
+                if (!await _session.RefreshAsync(token, RefreshAsync))
+                    throw new ApiException(HttpStatusCode.Unauthorized, _refreshError ?? "Your session has ended. Please sign in again.", _refreshEnd ?? "Expired");
+                using var retry = await SendRawAsync(method, path, body, withTenant, _session.Token);
+                return await ReadAsync<T>(retry);
+            }
+            return await ReadAsync<T>(res);
+        }
+
+        /// <summary>UMS names why a session ended (Replaced, Idle, RevokedByAdmin…) in this header of a 401.</summary>
+        public const string SessionEndHeader = "X-Session-End";
+
+        private async Task<HttpResponseMessage> SendRawAsync(HttpMethod method, string path, object? body, bool withTenant, string? token)
+        {
             using var req = new HttpRequestMessage(method, "api/v1" + path);
-            if (_session.Token != null) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.Token);
+            if (token != null) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             if (withTenant && _tenant.TenantId != Guid.Empty) req.Headers.Add("X-Tenant-Id", _tenant.TenantId.ToString());
             if (body != null) req.Content = JsonContent.Create(body, body.GetType(), options: Json);
-
-            HttpResponseMessage res;
             try
             {
-                res = await _http.SendAsync(req);
+                return await _http.SendAsync(req);
             }
             catch (HttpRequestException)
             {
                 throw new ApiException(HttpStatusCode.ServiceUnavailable, $"Cannot reach the UMS API at {_http.BaseAddress}. Is the WebApi project running?");
             }
+        }
 
-            using (res)
+        private static async Task<T> ReadAsync<T>(HttpResponseMessage res)
+        {
+            if (!res.IsSuccessStatusCode)
             {
-                if (!res.IsSuccessStatusCode)
+                var message = $"{(int)res.StatusCode} {res.ReasonPhrase}";
+                try
                 {
-                    var message = $"{(int)res.StatusCode} {res.ReasonPhrase}";
-                    try
-                    {
-                        var problem = await res.Content.ReadFromJsonAsync<JsonElement>(Json);
-                        var title = problem.TryGetProperty("title", out var t) ? t.GetString() : null;
-                        var detail = problem.TryGetProperty("detail", out var d) ? d.GetString() : null;
-                        message = detail != null ? $"{title}: {detail}" : title ?? message;
-                    }
-                    catch (Exception) { /* not a problem response */ }
-                    throw new ApiException(res.StatusCode, message);
+                    var problem = await res.Content.ReadFromJsonAsync<JsonElement>(Json);
+                    var title = problem.TryGetProperty("title", out var t) ? t.GetString() : null;
+                    var detail = problem.TryGetProperty("detail", out var d) ? d.GetString() : null;
+                    message = detail != null ? $"{title}: {detail}" : title ?? message;
                 }
-                if (typeof(T) == typeof(bool)) return (T)(object)true;
-                return (await res.Content.ReadFromJsonAsync<T>(Json))!;
+                catch (Exception) { /* not a problem response */ }
+                var ended = res.Headers.TryGetValues(SessionEndHeader, out var v) ? v.FirstOrDefault() : null;
+                throw new ApiException(res.StatusCode, message, ended);
             }
+            if (typeof(T) == typeof(bool)) return (T)(object)true;
+            return (await res.Content.ReadFromJsonAsync<T>(Json))!;
+        }
+
+        private string? _refreshError, _refreshEnd;
+
+        private async Task<LoginResultDto?> RefreshAsync(string refreshToken)
+        {
+            using var res = await SendRawAsync(HttpMethod.Post, "/auth/refresh", new { refreshToken }, false, null);
+            if (res.IsSuccessStatusCode) return await res.Content.ReadFromJsonAsync<LoginResultDto>(Json);
+            try
+            {
+                // e.g. { title: "You signed in on another device…", code: "session.replaced" }
+                var problem = await res.Content.ReadFromJsonAsync<JsonElement>(Json);
+                _refreshError = problem.TryGetProperty("title", out var t) ? t.GetString() : null;
+                var code = problem.TryGetProperty("code", out var c) ? c.GetString() : null;
+                _refreshEnd = code?.StartsWith("session.") == true ? code["session.".Length..] : null;
+            }
+            catch (Exception) { /* not a problem response */ }
+            return null;
         }
 
         private Task<T> Get<T>(string path, bool withTenant = true) => SendAsync<T>(HttpMethod.Get, path, null, withTenant);
@@ -132,7 +222,15 @@ namespace UMS.AdminPortal.Services
         private Task<bool> Delete(string path) => SendAsync<bool>(HttpMethod.Delete, path);
 
         // auth
-        public Task<LoginResultDto> LoginAsync(string email, string password) => SendAsync<LoginResultDto>(HttpMethod.Post, "/auth/login", new { email, password }, false);
+        public const string AppCode = "UMS";
+        public Task<LoginResultDto> LoginAsync(string email, string password, string? clientIp, string? userAgent) =>
+            SendAsync<LoginResultDto>(HttpMethod.Post, "/auth/login", new { email, password, appCode = AppCode, clientIp, userAgent }, false);
+        public Task<bool> LogoutAsync(SessionEndReason reason) => SendAsync<bool>(HttpMethod.Post, "/auth/logout", new { reason }, false);
+        public Task<SessionStatusDto> SessionStatusAsync(bool touch) => SendAsync<SessionStatusDto>(HttpMethod.Get, $"/auth/session?touch={(touch ? "true" : "false")}", null, false);
+
+        // sign-in sessions of the tenant
+        public Task<List<UserSessionDto>> SessionsAsync(bool activeOnly) => Get<List<UserSessionDto>>($"/sessions?activeOnly={(activeOnly ? "true" : "false")}");
+        public Task<bool> RevokeSessionAsync(Guid id) => Delete($"/sessions/{id}");
 
         // tenants & settings
         public Task<List<TenantDto>> TenantsAsync() => Get<List<TenantDto>>("/tenants", withTenant: false);

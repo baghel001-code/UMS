@@ -21,6 +21,8 @@ namespace Infrastructure.Persistence.InMemory
         internal readonly List<AuditLog> AuditLogs;
         internal readonly List<UserActionLog> ActionLogs;
         internal readonly List<ExceptionLog> ExceptionLogs;
+        internal readonly Dictionary<Guid, UserSession> Sessions = new();
+        internal readonly Dictionary<string, LoginAttempt> LoginAttempts = new();
 
         public InMemoryUmsStore(DemoSeed seed)
         {

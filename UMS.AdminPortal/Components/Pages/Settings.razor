@@ -24,7 +24,11 @@
                         <MudItem xs="6"><MudNumericField @bind-Value="_s.LockoutMinutes" Label="Lockout duration (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
                         <MudItem xs="6"><MudNumericField @bind-Value="_s.SessionTimeoutMinutes" Label="Idle session timeout (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
                         <MudItem xs="6"><MudNumericField @bind-Value="_s.JwtExpiryMinutes" Label="Access token lifetime (minutes)" Variant="Variant.Outlined" Min="1" /></MudItem>
-                        <MudItem xs="6"><MudNumericField @bind-Value="_s.RefreshTokenDays" Label="Refresh token lifetime (days)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="6"><MudNumericField @bind-Value="_s.RefreshTokenDays" Label="Session lifetime (days, refresh token)" Variant="Variant.Outlined" Min="1" /></MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch @bind-Value="_s.SingleDeviceLogin" Color="Color.Primary" Label="Single-device login" />
+                            <MudText Typo="Typo.caption" Class="muted d-block">A new sign-in to an application ends the user's other sessions in that application (the other device is signed out with a message).</MudText>
+                        </MudItem>
                     </MudGrid>
                 </div>
             </MudPaper>
@@ -56,6 +60,7 @@
         public int JwtExpiryMinutes { get; set; }
         public int RefreshTokenDays { get; set; }
         public string AllowedIpRanges { get; set; } = "";
+        public bool SingleDeviceLogin { get; set; }
     }
 
     private SettingsEdit? _s;
@@ -67,7 +72,7 @@
         {
             PasswordMinLength = s.PasswordMinLength, PasswordExpiryDays = s.PasswordExpiryDays, MaxFailedLogins = s.MaxFailedLogins, LockoutMinutes = s.LockoutMinutes,
             SessionTimeoutMinutes = s.SessionTimeoutMinutes, MfaRequiredForAdmins = s.MfaRequiredForAdmins, MfaRequiredOutsideOffice = s.MfaRequiredOutsideOffice,
-            JwtExpiryMinutes = s.JwtExpiryMinutes, RefreshTokenDays = s.RefreshTokenDays, AllowedIpRanges = s.AllowedIpRanges,
+            JwtExpiryMinutes = s.JwtExpiryMinutes, RefreshTokenDays = s.RefreshTokenDays, AllowedIpRanges = s.AllowedIpRanges, SingleDeviceLogin = s.SingleDeviceLogin,
         };
     }
 
@@ -75,7 +80,7 @@
     {
         var s = _s!;
         var settings = new DomainLayer.Entities.SecuritySettings(s.PasswordMinLength, s.PasswordExpiryDays, s.MaxFailedLogins, s.LockoutMinutes, s.SessionTimeoutMinutes,
-            s.MfaRequiredForAdmins, s.MfaRequiredOutsideOffice, s.JwtExpiryMinutes, s.RefreshTokenDays, s.AllowedIpRanges);
+            s.MfaRequiredForAdmins, s.MfaRequiredOutsideOffice, s.JwtExpiryMinutes, s.RefreshTokenDays, s.AllowedIpRanges, s.SingleDeviceLogin);
         if (await Ui.Run(() => Api.SaveSettingsAsync(settings)) is not null) Ui.Ok("Settings saved");
     }
 }

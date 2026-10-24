@@ -5,6 +5,7 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage Storage
+@inject ClientInfo Client
 
 <PageTitle>Sign in · VMM UMS</PageTitle>
 
@@ -19,6 +20,10 @@
     <EditForm Model="_form" OnValidSubmit="SignInAsync">
         <MudStack Spacing="3">
             <MudText Typo="Typo.h6">Sign in</MudText>
+            @if (_notice != null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">@_notice</MudAlert>
+            }
             <MudTextField @bind-Value="_form.Email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Required="true" AutoFocus="true" />
             <MudTextField @bind-Value="_form.Password" Label="Password" InputType="InputType.Password" Variant="Variant.Outlined" Required="true" />
             <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Disabled="_busy" FullWidth="true">
@@ -38,15 +43,36 @@
 
     private readonly LoginForm _form = new();
     private bool _busy;
+    private string? _notice;
+
+    [SupplyParameterFromQuery(Name = "reason")] public string? Reason { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _notice = Reason?.ToLowerInvariant() switch
+        {
+            "replaced" => "You signed in on another device, so this session was ended.",
+            "idle" => "You were signed out after a period of inactivity.",
+            "revokedbyadmin" => "An administrator ended your session.",
+            "tokenreuse" => "Your session was ended for security reasons.",
+            "accountdisabled" => "Your account is no longer active.",
+            "expired" => "Your session has expired. Please sign in again.",
+            _ => null
+        };
+        // arriving here means signed out: forget the stored session
+        Session.SignOut();
+        try { await Storage.DeleteAsync(MainLayout.StorageKey); } catch (Exception) { /* not interactive yet */ }
+    }
 
     private async Task SignInAsync()
     {
         _busy = true;
         try
         {
-            var result = await Api.LoginAsync(_form.Email, _form.Password);
+            var result = await Api.LoginAsync(_form.Email, _form.Password, Client.Ip, Client.UserAgent);
             Session.SignIn(result);
-            await Storage.SetAsync("ums-session", new MainLayout.StoredSession(result.Token, result.FullName, result.TenantId));
+            await Storage.SetAsync(MainLayout.StorageKey, Session.ToStored()!);
+            if (result.EndedOtherSessions) Snackbar.Add("You were signed in on another device; that session has been ended.", Severity.Info);
             Nav.NavigateTo("/");
         }
         catch (ApiException ex)

@@ -1,0 +1,177 @@
+@page "/accessories"
+@page "/consumables"
+@page "/components"
+@inject AppState State
+@inject Ui Ui
+@inject NavigationManager Nav
+
+<PageTitle>@Title · VMM Assets</PageTitle>
+
+<PageHeader Title="@Title" Subtitle="@Subtitle">
+    <Actions>
+        @if (State.Can(_module, _resource, Actions.Create))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New @Singular</MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<MudPaper Class="ums-card" Elevation="0">
+    <div class="ams-filters">
+        <MudTextField T="string" Value="_search" ValueChanged="v => { _search = v; _ = LoadAsync(); }" Placeholder="Search name, model, category, location…" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DebounceInterval="300" Class="grow" />
+        <MudSwitch T="bool" Value="_lowOnly" ValueChanged="v => _lowOnly = v" Color="Color.Warning" Label="Low stock only" />
+    </div>
+    <MudTable T="StockRow" Items="Visible" Loading="_loading" Hover="true" Dense="true" Elevation="0" Class="ums-table" RowsPerPage="25">
+        <HeaderContent>
+            <MudTh>@Singular</MudTh>
+            <MudTh>Location</MudTh>
+            <MudTh Style="text-align:right">@(Kind == StockKind.Consumable ? "In stock" : "Total")</MudTh>
+            @if (Kind != StockKind.Consumable)
+            {
+                <MudTh Style="text-align:right">@(Kind == StockKind.Component ? "Installed" : "Checked out")</MudTh>
+            }
+            <MudTh Style="text-align:right">Available</MudTh>
+            <MudTh Style="text-align:right">Unit cost</MudTh>
+            <MudTh Style="width:1%"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <b>@context.Item.Name</b>
+                <div class="muted" style="font-size:12px">@context.Item.ManufacturerName @context.Item.ModelNumber · @context.Item.CategoryName</div>
+            </MudTd>
+            <MudTd>@context.Item.LocationCode</MudTd>
+            <MudTd Style="text-align:right">@context.Item.Quantity</MudTd>
+            @if (Kind != StockKind.Consumable)
+            {
+                <MudTd Style="text-align:right">@context.Item.InUse</MudTd>
+            }
+            <MudTd Style="text-align:right">
+                @if (context.Item.Low)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Icon="@Icons.Material.Filled.Warning">@context.Item.Available · re-order</MudChip>
+                }
+                else
+                {
+                    <b>@context.Item.Available</b>
+                }
+            </MudTd>
+            <MudTd Style="text-align:right">@Fmt.Money(context.Item.UnitCost)</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    @if (context.CanCheckout)
+                    {
+                        <MudTooltip Text="@CheckoutVerb"><MudIconButton Icon="@Icons.Material.Filled.Logout" Size="Size.Small" Color="Color.Primary" OnClick="() => CheckoutAsync(context)" /></MudTooltip>
+                    }
+                    <MudTooltip Text="@(Kind == StockKind.Consumable ? "Issue history" : "Who has it")"><MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Primary" OnClick="() => HoldersAsync(context)" /></MudTooltip>
+                    @if (context.CanEdit)
+                    {
+                        <MudTooltip Text="Edit"><MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => EditAsync(context)" /></MudTooltip>
+                    }
+                    @if (context.CanDelete)
+                    {
+                        <MudTooltip Text="Delete"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="() => DeleteAsync(context)" /></MudTooltip>
+                    }
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="muted pa-4">Nothing you are allowed to see.</MudText></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50 }" /></PagerContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<StockRow> _rows = new();
+    private string? _search;
+    private bool _lowOnly;
+    private bool _loading = true;
+    private string _module = "", _resource = "";
+    private StockKind Kind { get; set; }
+    private string _path = "";
+
+    private IEnumerable<StockRow> Visible => _lowOnly ? _rows.Where(r => r.Item.Low) : _rows;
+
+    private string Title => Kind switch { StockKind.Accessory => "Accessories", StockKind.Consumable => "Consumables", _ => "Components" };
+    private string Singular => Kind switch { StockKind.Accessory => "Accessory", StockKind.Consumable => "Consumable", _ => "Component" };
+    private string CheckoutVerb => Kind switch { StockKind.Accessory => "Check out", StockKind.Consumable => "Issue", _ => "Install into asset" };
+    private string Subtitle => Kind switch
+    {
+        StockKind.Accessory => "Peripherals lent to people and returned (mouse, headset, scanner). One per person.",
+        StockKind.Consumable => "Supplies that are used up when issued (toner, receipt rolls, labels). Re-order when stock hits the re-order level.",
+        _ => "Parts installed into assets (RAM, SSD). Removing a component returns it to stock."
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0];
+        if (path == _path) return;
+        _path = path;
+        Kind = path switch { "consumables" => StockKind.Consumable, "components" => StockKind.Component, _ => StockKind.Accessory };
+        (_module, _resource) = Stock(Kind);
+        _search = null;
+        _lowOnly = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _rows = (await Ui.Call<StockListRes, StockListReq>(AmsApiNames.GET_STOCK, new StockListReq { Kind = Kind, Search = _search }))?.Rows ?? new();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task EditAsync(StockRow? row)
+    {
+        var options = await Ui.Get<OptionsRes>(AmsApiNames.GET_OPTIONS);
+        if (options == null) return;
+        if (row?.Item is { } it && options.Locations.All(l => l.Id != it.LocationId))
+            options.Locations.Insert(0, new SetupItem { Id = it.LocationId, Kind = SetupKind.Location, Code = it.LocationCode, Name = it.LocationName, Region = it.Region });
+        var kind = Kind;
+        var p = new DialogParameters<StockDialog>
+        {
+            { x => x.Model, row == null ? new StockSaveReq { Kind = kind } : StockSaveReq.From(row.Item) },
+            { x => x.Kind, kind },
+            { x => x.Options, options },
+            { x => x.IsNew, row == null },
+            { x => x.Submit, m => { m.Kind = kind; return Ui.Do(AmsApiNames.SAVE_STOCK, m, $"{Singular} saved"); } },
+        };
+        if (await Ui.DialogAsync<StockDialog, bool>(row == null ? $"New {Singular.ToLowerInvariant()}" : $"Edit {row.Item.Name}", p, MaxWidth.Medium)) await LoadAsync();
+    }
+
+    private async Task CheckoutAsync(StockRow row)
+    {
+        var kind = Kind;
+        var assets = kind == StockKind.Component ? (await Ui.Get<AssetsRes>(AmsApiNames.GET_ASSET_CHOICES))?.Assets ?? new() : new List<AssetView>();
+        var p = new DialogParameters<AssignDialog>
+        {
+            { x => x.Item, $"{row.Item.Name} · {row.Item.Available} available at {row.Item.LocationCode}" },
+            { x => x.PersonMode, kind == StockKind.Component ? AssignDialog.Need.No : AssignDialog.Need.Required },
+            { x => x.AssetMode, kind == StockKind.Component ? AssignDialog.Need.Required : AssignDialog.Need.No },
+            { x => x.AssetChoices, assets },
+            { x => x.MaxQuantity, kind == StockKind.Accessory ? 1 : row.Item.Available },
+            { x => x.Verb, CheckoutVerb },
+            { x => x.Submit, r => Ui.Do(AmsApiNames.CHECKOUT_STOCK, new StockCheckoutReq { StockItemId = row.Item.Id, EmpCode = r.EmpCode, AssetId = r.AssetId, Quantity = r.Quantity, Note = r.Note }, "Done") },
+        };
+        if (await Ui.DialogAsync<AssignDialog, bool>($"{CheckoutVerb} · {row.Item.Name}", p)) await LoadAsync();
+    }
+
+    private async Task HoldersAsync(StockRow row)
+    {
+        var kind = Kind;
+        var p = new DialogParameters<HoldersDialog>
+        {
+            { x => x.HolderLabel, kind == StockKind.Component ? "Installed in" : kind == StockKind.Consumable ? "Issued to" : "Checked out to" },
+            { x => x.Load, async () => (await Ui.Call<HoldersRes, IdReq>(AmsApiNames.GET_STOCK_HOLDERS, new IdReq { Id = row.Item.Id }))?.Holders },
+            { x => x.Checkin, h => Ui.Do(AmsApiNames.CHECKIN_STOCK, new StockCheckinReq { StockItemId = row.Item.Id, AssignmentId = h.Id }, "Returned to stock") },
+        };
+        if (await Ui.DialogAsync<HoldersDialog, bool>(row.Item.Name, p)) await LoadAsync();
+    }
+
+    private async Task DeleteAsync(StockRow row)
+    {
+        if (!await Ui.ConfirmAsync($"Delete {Singular.ToLowerInvariant()}", $"Delete {row.Item.Name}?", "Delete")) return;
+        if (await Ui.Do(AmsApiNames.DELETE_STOCK, new IdReq { Id = row.Item.Id }, $"{Singular} deleted")) await LoadAsync();
+    }
+}

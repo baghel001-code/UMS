@@ -32,16 +32,22 @@ src
 │                         RequirePermission filter (UMS protects itself with its own engine), JWT auth
 └── UMS.AdminPortal/      Blazor Server + MudBlazor admin console (prismatic blue / white theme).
                           Calls WebApi over HTTP; reuses the ApplicationLayer DTOs.
-AssetManagement           Asset Management System – a client application protected by UMS
-├── AMS.Core/             Entities (assets, licences, accessories, consumables, components, requests, …) and
-│                         services; every operation asks IAccessGuard (UMS) with the record's attributes
-├── AMS.Infrastructure/   EF Core (SQLite for development, SQL Server), tenant filter, demo data,
-│                         UmsClient + UmsAccessGuard (calls /api/v1/me/authorize with the user's token)
-└── AMS.Web/              Blazor Server + MudBlazor UI, same prismatic blue / white theme
+AssetManagement           Asset Management System – a client application protected by UMS (clean architecture)
+├── AMS.Domain/           Request/response models (BaseResponse: responseCode, responseMessage, recordId),
+│                         read models, enums, exceptions, the AMS permission catalogue (identifiers only)
+├── AMS.Application/      Use cases (assets, licences, stock, requests, maintenance, setup, reports); every one
+│                         asks IAccessGuard (UMS) first. Ports: repositories, IAPICall, e-mail (INotifier<T>)
+├── AMS.Infrastructure/   Dapper + stored procedures (DapperHelper), UmsClient / UmsAccessGuard, SMTP e-mail
+│                         queue and daily digest, ApiCallService (IAPICall) used by the portal
+├── AMS.Api/              REST API POST /api/v1/{action}; validates the UMS token (app AMS, session id);
+│                         the only part of AMS that touches the database
+├── AMS.Portal/           Blazor Server + MudBlazor web portal; signs in through UMS, calls AMS.Api only.
+│                         Single-device login, idle timeout, token refresh
+└── database/             001_ams_schema.sql, 002_ams_procedures.sql (SQL Server)
 tests
-├── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats, AMS policies
-└── AMS.Tests             (AssetManagement/AMS.Tests) services always ask UMS, list filtering, guard client
-database/                 001_create_access_control_schema.sql (SQL Server)
+├── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats, sessions, AMS policies
+└── AMS.Tests             (AssetManagement/AMS.Tests) use cases, API client, UMS guard, e-mail, SQL procedures
+database/                 001 schema, 002 sign-in sessions and lockout (SQL Server)
 docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 ```
 
@@ -55,8 +61,9 @@ docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 3. Press **F5**.
    - The API runs at `http://localhost:5125` (Swagger UI at `/`).
    - The admin portal opens at **`http://localhost:5200`**.
-4. To run Asset Management as well, choose **API + Admin Portal + Asset Management** instead. AMS opens at
-   **`http://localhost:5300`**.
+4. To run Asset Management as well, choose **API + Admin Portal + Asset Management** instead. This starts
+   `AMS.Api` (`http://localhost:5310`, Swagger at `/swagger`) and `AMS.Portal` at **`http://localhost:5300`**.
+   AMS needs SQL Server (see [Asset Management database](#asset-management-database)).
 
 In Development the API uses in-memory demo data (about 300 users, 13 applications, 21 roles and 11 policies in
 the main tenant) and does not require sign-in. Changes are kept until the API stops.
@@ -66,8 +73,9 @@ From the command line, run each in its own terminal:
 ```bash
 dotnet run --project WebApi --launch-profile http
 dotnet run --project UMS.AdminPortal --launch-profile http
-dotnet run --project AssetManagement/AMS.Web --launch-profile http
-dotnet test UMS_Sol.sln                    # 56 xUnit tests (UMS 36 + AMS 20)
+dotnet run --project AssetManagement/AMS.Api --launch-profile http
+dotnet run --project AssetManagement/AMS.Portal --launch-profile http
+dotnet test UMS_Sol.sln                    # 74 xUnit tests (UMS 45 + AMS 29; 4 need AMS_TEST_SQL)
 ```
 
 The portal finds the API through `UmsApi:BaseUrl` in `UMS.AdminPortal/appsettings.json`.
@@ -84,7 +92,8 @@ development. Administrators can set passwords for other users in the user dialog
 
 ### SQL Server
 
-1. Create a database and run `database/001_create_access_control_schema.sql`.
+1. Create a database and run `database/001_create_access_control_schema.sql`, then
+   `database/002_sessions_and_lockout.sql`.
 2. In the WebApi configuration set:
    - `Persistence:Provider = SqlServer`
    - `ConnectionStrings:Default`
@@ -148,6 +157,32 @@ Sign in with a UMS account. Demo accounts (development, `Persistence:DemoUserPas
 To change who can do what in AMS, use the UMS admin portal: roles, role scopes, office hours and ABAC
 policies for application `AMS`. No AMS code or configuration changes are needed.
 
-In Development, AMS uses a SQLite file (`ams-dev.db`). It fills it with demo data for the main tenant on the first
-sign-in. For production, set `Ams:Database:Provider = SqlServer` and `ConnectionStrings:Ams`; the schema is created
-on start-up.
+### Asset Management database
+
+AMS keeps its data in its own SQL Server database, read and written only by `AMS.Api` through Dapper and the stored
+procedures in `AssetManagement/database/`. For development, any SQL Server 2019+ works; with Docker:
+
+```bash
+docker run -d --name sql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Dev_Passw0rd!' -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+```
+
+`AMS.Api/appsettings.Development.json` points at that server (`ConnectionStrings:Ams`), has `Ams:Database:AutoMigrate`
+on and sets `DemoTenantId`: on start-up the API creates database `VMM_AMS`, runs the schema once, refreshes the
+procedures and fills an empty database with demo data. In production, DBAs run the two scripts and `AutoMigrate`
+stays off.
+
+E-mails (check-out, check-in, asset requests, decisions, daily digest) go to `AMS.Api/MailDrop/*.eml` in development.
+Set `EmailServerSettings` (SMTP) and `Notifications` for real mail.
+
+### Sessions and security
+
+- **Single-device login.** Signing in again ends the user's other session in the same application. The other
+  browser is signed out with *"You signed in on another device"*. The switch is in UMS **Security Settings**.
+- **Idle timeout.** `SessionTimeoutMinutes` (Security Settings) signs inactive users out after a one-minute warning.
+  The browser and the server both watch, and the UMS session is closed as *Idle*.
+- **Tokens.** UMS issues a short-lived access token (`JwtExpiryMinutes`) bound to the session (`sid` claim) and a
+  rotating refresh token (`RefreshTokenDays`). A reused refresh token ends the session. Every UMS-protected call
+  checks the session, so a revoked or replaced session stops working at once.
+- **Lockout.** `MaxFailedLogins` failed attempts lock the account for `LockoutMinutes`.
+- **Active Sessions** in the UMS admin portal lists who is signed in to which application, from where. An
+  administrator can end any session; AMS signs that user out within a minute.

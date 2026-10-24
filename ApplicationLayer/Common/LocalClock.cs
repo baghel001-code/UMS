@@ -15,5 +15,14 @@ namespace ApplicationLayer.Common
         }
 
         public static DateOnly Today(TimeProvider time) => DateOnly.FromDateTime(Now(time));
+
+        /// <summary>Converts a UTC instant to business wall-clock time (for messages such as "locked until 04:15 PM").</summary>
+        public static DateTime ToLocal(DateTime utc, string timeZone = DefaultTimeZone)
+        {
+            TimeZoneInfo tz;
+            try { tz = TimeZoneInfo.FindSystemTimeZoneById(timeZone); }
+            catch (TimeZoneNotFoundException) { tz = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time"); }
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), tz);
+        }
     }
 }

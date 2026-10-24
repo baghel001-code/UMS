@@ -1,0 +1,81 @@
+@page "/account/login"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+@inject AccountService Accounts
+@inject ClientInfo Client
+@inject IJSRuntime JS
+
+<PageTitle>Sign in · VMM Assets</PageTitle>
+
+<MudPaper Class="ums-login-card pa-8" Elevation="0">
+    <div class="ums-brand">
+        <div class="ums-logo">V</div>
+        <div>
+            <b>VMM Assets</b>
+            <small>Asset Management System</small>
+        </div>
+    </div>
+    <EditForm Model="_form" OnValidSubmit="SignInAsync">
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h6">Sign in with your UMS account</MudText>
+            @if (_notice != null)
+            {
+                <MudAlert Severity="@(Reason == "signedout" ? Severity.Success : Severity.Warning)" Dense="true">@_notice</MudAlert>
+            }
+            @if (_error != null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+            }
+            <MudTextField @bind-Value="_form.Email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Required="true" AutoFocus="true" />
+            <MudTextField @bind-Value="_form.Password" Label="Password" InputType="InputType.Password" Variant="Variant.Outlined" Required="true" />
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Disabled="_busy" FullWidth="true">
+                @(_busy ? "Signing in…" : "Sign in")
+            </MudButton>
+            <MudText Typo="Typo.caption" Class="muted">
+                Identity, single-device login, the idle timeout and every permission in this application are managed centrally in UMS (application code <b>AMS</b>).
+            </MudText>
+        </MudStack>
+    </EditForm>
+</MudPaper>
+
+@* the verified sign-in is handed to the HTTP endpoint that writes the cookie *@
+<form id="complete-login" method="post" action="@AuthConstants.CompleteLoginEndpoint" style="display:none">
+    <input type="hidden" name="ticket" value="@_ticket" />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+</form>
+
+@code {
+    private sealed class LoginForm
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    [SupplyParameterFromQuery(Name = "reason")] public string? Reason { get; set; }
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private readonly LoginForm _form = new();
+    private string? _notice, _error, _ticket;
+    private bool _busy;
+
+    protected override void OnInitialized() => _notice = SessionEndReasons.Message(Reason);
+
+    private async Task SignInAsync()
+    {
+        _busy = true;
+        _error = null;
+        var result = await Accounts.SignInAsync(_form.Email, _form.Password, Client);
+        if (result.Status != LoginStatus.Success)
+        {
+            _error = result.Message;
+            _busy = false;
+            return;
+        }
+        _ticket = result.Ticket;
+        _notice = null;
+        StateHasChanged();
+        await Task.Yield();
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/auth.js");
+        await module.InvokeVoidAsync("submitForm", "complete-login", AuthConstants.AntiforgeryTokenEndpoint);
+    }
+}

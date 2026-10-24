@@ -23,10 +23,22 @@ namespace ApplicationLayer.Interfaces
         Task<AccessContext> LoadAsync(Guid tenantId, CancellationToken ct = default);
     }
 
-    /// <summary>Issues a signed access token for an authenticated user.</summary>
+    public sealed record IssuedToken(string Token, DateTime ExpiresAtUtc);
+
+    /// <summary>Issues signed access tokens. Each token names its sign-in session (claim "sid") and application (claim "app").</summary>
     public interface ITokenIssuer
     {
-        string IssueToken(User user);
+        IssuedToken IssueAccessToken(User user, UserSession session, TimeSpan lifetime);
+    }
+
+    /// <summary>
+    /// Is a sign-in session still usable? Called for every authenticated request (JWT "sid" claim), so implementations cache briefly;
+    /// <see cref="Forget"/> drops the cached state when a session is ended so the change applies at once.
+    /// </summary>
+    public interface ISessionValidator
+    {
+        Task<SessionEndReason> CheckAsync(Guid sessionId, CancellationToken ct = default);
+        void Forget(Guid sessionId);
     }
 
     public interface IPasswordHasher
