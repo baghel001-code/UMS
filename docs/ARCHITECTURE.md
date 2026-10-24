@@ -26,9 +26,10 @@ The Policy Decision Point (PDP) answers in layers. The first layer that fails de
 **Grant** policies can stand in for a missing RBAC permission in layers 3–6. Example: the approver named on a PO can
 approve it without a procurement role. Restrict and Deny policies still apply after a grant.
 
-The reference implementation is `admin-panel/src/engine/pdp.ts`, covered by unit tests in `pdp.test.ts`.
-The backend `IAuthorizationService` must port this algorithm unchanged, so the simulator in the admin panel and
-production give the same answer.
+The server implementation is `DomainLayer/Services/AccessDecisionService.cs` (tests in
+`Tests/UMS.Tests/AccessDecisionServiceTests.cs`). The admin panel's simulator runs the same algorithm in
+`admin-panel/src/engine/pdp.ts` (tests in `pdp.test.ts`), and both test suites cover the same scenarios.
+When you change one engine, change the other and keep both test suites green.
 
 ### Permission keys
 
@@ -79,81 +80,77 @@ Example: `Restrict PAYROLL.*.*.* WHEN InSchedule(env.now, 'GENERAL')`.
  ┌──────────────────────────────┐             ┌───────────────────────────┐
  │ PEP: auth middleware / SDK   │             │ Users · Roles · Policies  │
  │  - validates JWT (tenant,sub)│             │ Apps · Schedules · Logs   │
- │  - POST /api/authorize       │             │ Access Simulator          │
+ │  - POST /api/v1/authorize    │             │ Access Simulator          │
  └──────────────┬───────────────┘             └─────────────┬─────────────┘
                 │                                           │ REST (admin scope)
         ┌───────▼───────────────────────────────────────────▼──────┐
         │ UMS API (ASP.NET Core)                                    │
-        │  TenantResolver → ExceptionLogger → Authentication (JWT)  │
-        │  → Authorization (PDP) → AuditLogger                      │
-        │  IAuthService · IAuthorizationService · IAuditService      │
-        │  IUserActionService · IExceptionLogger                     │
+        │  ExceptionLoggingMiddleware → JWT auth → RequirePermission │
+        │  → MediatR handlers (ApplicationLayer) → repositories      │
+        │  AccessDecisionService · IAuditService · ILogRepository    │
+        │  ICurrentTenantService · ITokenIssuer · IPasswordHasher    │
         └───────┬─────────────────────────────┬────────────────────┘
                 │                             │
-        SQL Server / PostgreSQL         Redis (permission & policy cache,
-        (tables below, TenantId on all)  refresh tokens) · Serilog → Seq/ELK
+        SQL Server (Dapper)             In-memory store (development/demo)
+        (tables below, TenantId on all) Redis cache: recommended next step
 ```
 
-* **Third-party apps** that cannot call `/api/authorize` per request receive coarse permissions as JWT/SAML claims
+* **Third-party apps** that cannot call `/api/v1/authorize` per request receive coarse permissions as JWT/SAML claims
   (`permissions: ["HRMS.ESS.*.VIEW", …]`) via SSO (OIDC/SAML), or are provisioned via SCIM.
-* **In-house apps** call `/api/authorize` (or use the shared .NET SDK that caches the user's effective
+* **In-house apps** call `/api/v1/authorize` (or use the shared .NET SDK that caches the user's effective
   permissions and policies for a short TTL and evaluates locally).
 
 ## 3. Database tables
 
-All tables carry `TenantId`. EF Core global query filters enforce tenant isolation.
+The schema is `database/001_create_access_control_schema.sql`, implemented by
+`Infrastructure/Persistence/SqlServer/SqlServerRepositories.cs`. Every tenant-owned table carries `TenantId`.
 
 | Table | Key columns |
 |-------|-------------|
-| `Tenants` | Id, Code, Name, IsActive, CreatedOn |
-| `TenantSettings` | TenantId, Key, Value (password policy, MFA, token lifetimes, trusted IP ranges) |
-| `Applications` | Id, Code (unique), Name, Type (InHouse/ThirdParty), Vendor, OwnerDept, IsActive |
-| `ApplicationTenants` | ApplicationId, TenantId |
-| `Modules` | Id, ApplicationId, Code, Name |
-| `Resources` | Id, ModuleId, Code, Name |
-| `ResourceActions` | ResourceId, Action |
-| `Roles` | Id, TenantId, Code, Name, Description, ApplicationId (nullable = cross-app), IsSystem, IsActive |
-| `RolePermissions` | RoleId, PermissionKey (`APP.MODULE.RESOURCE.ACTION`, wildcards allowed) |
-| `Users` | Id, TenantId, EmpCode, FullName, Email, Phone, Department, Designation, Location, Region, EmploymentType, Status, MfaEnabled, PasswordHash, LastLogin, AccountExpiry |
-| `UserAttributes` | Id, UserId, TenantId, AttributeKey, AttributeValue, LastUpdated |
-| `UserRoles` | UserId, RoleId, ScopeJson (e.g. `{"store":"S045,S046"}`), ValidFrom, ValidTo, AssignedBy, AssignedOn |
-| `Policies` | Id, TenantId, Name, Description, Effect, TargetApp, TargetModule, TargetResource, TargetActions, TargetRoles, Match (all/any), ConditionsJson, RuleExpression, Priority, IsActive, CreatedBy, CreatedAt |
-| `ResourceAttributes` | Id, TenantId, ResourceType, ResourceId, AttributeKey, AttributeValue (for resources whose attributes UMS must look up itself) |
-| `Schedules` | Id, TenantId, Code, Name, TimeZone, ExcludeHolidays, WindowsJson |
-| `Holidays` | Id, TenantId, Date, Name, Regions |
-| `AuditLogs` | Id, TenantId, UserId/Actor, EntityName, EntityId, Action, OldValues, NewValues, Timestamp, IP, Device |
-| `UserActions` | Id, TenantId, UserId, App, Route, Action (permission key), Decision, Reason, Timestamp, IP |
-| `ExceptionLogs` | Id, TenantId, App, Severity, Message, StackTrace, UserId, RequestPath, QueryString, IP, Timestamp, Resolved |
-| `LoginAttempts` | Id, TenantId, UserName, Success, IP, Device, Timestamp |
+| `Tenants`, `TenantSettings` | tenant; security settings stored as JSON |
+| `Applications`, `ApplicationTenants`, `Modules`, `Resources` | catalogue; `Resources.Actions` is a comma list |
+| `Roles`, `RolePermissions` | `PermissionKey` = `APP.MODULE.RESOURCE.ACTION` (wildcards allowed) |
+| `UserAccounts`, `UserAttributes`, `UserRoleAssignments` | `ScopeJson` (e.g. `{"store":"S045,S046"}`), `ValidFrom` / `ValidTo` |
+| `Policies` | effect, target columns, `ConditionsJson` (structured, never executed as code), priority |
+| `Schedules`, `Holidays` | `WindowsJson` (`[{"days":["Mon"],"start":"09:30","end":"18:30"}]`), regions |
+| `AuditLogs`, `UserActions`, `ExceptionLogs` | clustered on `(TenantId, Timestamp DESC)` |
 
-`ConditionsJson` stores the structured conditions the admin builds in the UI. `RuleExpression` stores the
-rendered text (e.g. `InSchedule(env.now,'GENERAL') && env.network in ['Office LAN','VPN']`) for display and
-audit only. The backend evaluates the structured conditions, never a free-text expression, so the rules
-cannot be used for expression injection.
+UMS accounts live in `UserAccounts`, separate from the `[User]` table used by the generic `DapperRepository<T>`.
 
-## 4. REST API used by the admin panel
+## 4. REST API
 
-All routes are under `/api/v1`, need an admin JWT with the `UMS.*` permission for the area, and are tenant-scoped by
-the `X-Tenant-Id` header (or subdomain). Every mutating call writes an `AuditLogs` row with old/new values.
+All routes are under `/api/v1` (see `WebApi/Controllers/V1/AccessControlControllers.cs` and Swagger). The
+tenant comes from the `X-Tenant-Id` header, or else the `tenant_id` claim. Only an active `SUPER_ADMIN` may work in
+another tenant. Each endpoint requires a `UMS.*` permission, checked by the `RequirePermission` filter with the
+same engine. Every change writes an `AuditLogs` row with before/after JSON.
 
-| Area | Endpoints |
-|------|-----------|
-| Tenants | `GET/POST /tenants`, `PUT /tenants/{id}`, `GET/PUT /tenants/{id}/settings` |
-| Applications | `GET/POST /applications`, `GET/PUT/DELETE /applications/{id}` (modules, resources and actions are nested) |
-| Roles | `GET/POST /roles`, `GET/PUT/DELETE /roles/{id}`, `GET /roles/{id}/members` |
-| Users | `GET /users?q=&dept=&role=&region=&status=&page=&size=`, `POST /users`, `GET/PUT /users/{id}`, `POST /users/import` (CSV), `GET /users/export` |
-| User access | `POST /users/{id}/roles` (roleId, scope, validFrom, validTo), `DELETE /users/{id}/roles/{roleId}`, `PUT /users/{id}/attributes`, `GET /users/{id}/effective-permissions`, `POST /users/{id}/reset-password`, `POST /users/{id}/revoke-sessions`, `POST /users/bulk` (status / role) |
-| Policies | `GET/POST /policies`, `GET/PUT/DELETE /policies/{id}` |
-| Schedules | `GET/POST /schedules`, `PUT/DELETE /schedules/{id}`, `GET/POST/DELETE /holidays` |
-| Decision | `POST /authorize` – body = `AccessRequest`, response = `Decision` (`allowed`, `reason`, `steps[]`). Used by applications **and** by the Access Simulator. |
-| Logs | `GET /audit-logs`, `GET /user-actions`, `GET /exceptions`, `PUT /exceptions/{id}/resolve` |
+| Area | Endpoints | Permission |
+|------|-----------|------------|
+| Auth | `POST /auth/login` | anonymous |
+| Tenants | `GET /tenants`, `PUT /tenants/{id}`, `GET/PUT /tenants/{id}/settings` | `UMS.SETUP.TENANT.*`, `UMS.SETUP.SETTINGS.*` |
+| Applications | `GET /applications[?all=true]`, `PUT/DELETE /applications/{id}` | `UMS.SETUP.APPLICATION.*` |
+| Roles | `GET /roles`, `PUT/DELETE /roles/{id}` | `UMS.ROLES.ROLE.*` |
+| Users | `GET /users?search=&department=&roleId=&region=&status=`, `GET/PUT /users/{id}`, `POST /users/bulk`, `POST /users/import`, `GET /users/{id}/effective-permissions`, `POST /users/{id}/password` | `UMS.USERS.USER.*` |
+| Policies | `GET /policies`, `PUT/DELETE /policies/{id}` | `UMS.POLICIES.POLICY.*` |
+| Schedules | `GET /schedules`, `PUT/DELETE /schedules/{id}`, `GET/POST /holidays`, `DELETE /holidays/{id}` | `UMS.POLICIES.SCHEDULE.*` |
+| Decision | `POST /authorize` (body `AccessRequestDto`, returns `{allowed, reason, steps[]}`) | `UMS.POLICIES.DECISION.VIEW` |
+| Logs | `GET /audit-logs`, `GET /user-actions`, `GET /exceptions`, `PUT /exceptions/{id}/resolve` | `UMS.LOGS.*` |
 
-`AccessRequest` / `Decision` JSON shapes are the TypeScript interfaces in `admin-panel/src/types.ts`.
+Errors are RFC 7807 problem responses:
+- 400 for validation and domain-rule failures
+- 401 when the caller is not signed in
+- 403 with the deny reason when a permission check fails
+- 404 for unknown records
+- 500 for unexpected errors, which are also written to `ExceptionLogs`
 
 ## 5. Scale notes (12,000+ users, 50+ applications)
 
 * Server-side paging and filtering for users and logs. The UI already pages client-side, so switching to the API
   only changes the data source.
+* `AccessContextProvider` currently loads a tenant's data on every decision. That is fine in memory, but for SQL
+  Server, cache it (in memory or Redis) and invalidate on role, assignment or policy change.
+* `GET /users` returns the whole tenant, because the panel filters on the client. For 12,000+ users, add server-side
+  paging (the query already accepts filters).
 * Cache each user's effective permission set and the tenant's compiled policies in Redis. Invalidate on role,
   assignment or policy change (publish an event from `IAuditService`).
 * Logs grow fast: partition `UserActions` / `AuditLogs` by month, or ship them to Elasticsearch/Seq.

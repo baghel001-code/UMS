@@ -4,7 +4,7 @@ import { newId, useStore } from '../store/store';
 import type { Tenant } from '../types';
 
 export default function Tenants() {
-  const { state, upsert, toast, setTenantId, setState } = useStore();
+  const { state, upsert, toast, setTenantId } = useStore();
   const [editing, setEditing] = useState<Tenant | null>(null);
   const count = (tenantId: string) => ({
     users: state.users.filter((u) => u.tenantId === tenantId).length,
@@ -82,15 +82,9 @@ export default function Tenants() {
               </button>
               <button
                 className="btn primary"
-                onClick={() => {
+                onClick={async () => {
                   if (!editing.code || !editing.name) return toast('Code and name are required', 'error');
-                  upsert('tenants', editing);
-                  // a new tenant starts with a copy of the first tenant's security settings
-                  if (!state.settings[editing.id]) {
-                    const base = state.settings[state.tenants[0].id];
-                    setState((s) => ({ ...s, settings: { ...s.settings, [editing.id]: { ...base } } }));
-                  }
-                  setEditing(null);
+                  if (await upsert('tenants', editing)) setEditing(null);
                 }}
               >
                 Save

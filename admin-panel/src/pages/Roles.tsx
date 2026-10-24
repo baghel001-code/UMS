@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge, Field, Modal, PageHead, StatusBadge, Tabs } from '../components/ui';
 import { permissionCovers, permissionKey, permissionMatches } from '../engine/pdp';
 import { newId, useStore, useTenantData } from '../store/store';
@@ -18,7 +19,9 @@ export default function Roles() {
   const [tab, setTab] = useState<'Roles' | 'Role × Application matrix'>('Roles');
   const [q, setQ] = useState('');
   const [appFilter, setAppFilter] = useState('');
-  const [editing, setEditing] = useState<Role | null>(null);
+  const [params] = useSearchParams();
+  const blankRole = (): Role => ({ id: newId(), tenantId, code: '', name: '', description: '', appId: null, permissions: [], isSystem: false, isActive: true });
+  const [editing, setEditing] = useState<Role | null>(() => (params.get('new') ? blankRole() : null));
 
   const members = (r: Role) => d.users.filter((u) => u.roles.some((a) => a.roleId === r.id)).length;
   const rows = d.roles.filter(
@@ -33,7 +36,7 @@ export default function Roles() {
         actions={
           <button
             className="btn primary"
-            onClick={() => setEditing({ id: newId('role'), tenantId, code: '', name: '', description: '', appId: null, permissions: [], isSystem: false, isActive: true })}
+            onClick={() => setEditing(blankRole())}
           >
             + New role
           </button>
@@ -153,16 +156,18 @@ function RoleEditor({ role: initial, onClose }: { role: Role; onClose: () => voi
 
   const memberList = useMemo(() => d.users.filter((u) => u.roles.some((a) => a.roleId === role.id)), [d.users, role.id]);
 
-  const save = () => {
+  const save = async () => {
     if (!/^[A-Z][A-Z0-9_]*$/.test(role.code)) return toast('Role code must be UPPER_CASE', 'error');
     if (d.roles.some((r) => r.code === role.code && r.id !== role.id)) return toast('Role code already exists in this tenant', 'error');
     if (!role.name.trim()) return toast('Name is required', 'error');
     const old = state.roles.find((r) => r.id === role.id);
     const added = role.permissions.filter((p) => !old?.permissions.includes(p));
     const removed = old ? old.permissions.filter((p) => !role.permissions.includes(p)) : [];
-    upsert('roles', role, `${isNew ? 'Created' : 'Updated'} role ${role.code}${added.length ? ` +${added.length} permission(s)` : ''}${removed.length ? ` −${removed.length} permission(s)` : ''}`);
-    toast(`Saved ${role.name}`);
-    onClose();
+    const summary = `${isNew ? 'Created' : 'Updated'} role ${role.code}${added.length ? ` +${added.length} permission(s)` : ''}${removed.length ? ` −${removed.length} permission(s)` : ''}`;
+    if (await upsert('roles', role, summary)) {
+      toast(`Saved ${role.name}`);
+      onClose();
+    }
   };
 
   return (
@@ -177,11 +182,8 @@ function RoleEditor({ role: initial, onClose }: { role: Role; onClose: () => voi
               className="btn danger"
               disabled={memberList.length > 0}
               title={memberList.length ? 'Remove all members before deleting' : ''}
-              onClick={() => {
-                if (confirm(`Delete role ${role.code}?`)) {
-                  remove('roles', role.id);
-                  onClose();
-                }
+              onClick={async () => {
+                if (confirm(`Delete role ${role.code}?`) && (await remove('roles', role.id))) onClose();
               }}
             >
               Delete

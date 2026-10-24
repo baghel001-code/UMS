@@ -3,24 +3,26 @@ import { useSearchParams } from 'react-router-dom';
 import { Field, KeyValueEditor, PageHead } from '../components/ui';
 import { nowLocal } from '../data/seed';
 import { decide, type PdpData } from '../engine/pdp';
-import { newId, useStore, useTenantData } from '../store/store';
+import { useStore, useTenantData } from '../store/store';
 import { WEEKDAYS, type AccessRequest, type Action, type Environment } from '../types';
 
 interface Scenario {
   label: string;
-  req: Partial<Omit<AccessRequest, 'env'>> & { env?: Partial<Environment> };
+  /** users are referenced by employee code so scenarios work on demo data and on the API's data */
+  empCode: string;
+  req: Partial<Omit<AccessRequest, 'env' | 'userId'>> & { env?: Partial<Environment> };
 }
 
 const SCENARIOS: Scenario[] = [
-  { label: 'Cashier bills on POS terminal', req: { userId: 'u-2', app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S045' }, env: { channel: 'POS Terminal', dateTime: '2026-10-24T11:00' } } },
-  { label: 'Cashier bills at 23:30', req: { userId: 'u-2', app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S045' }, env: { channel: 'POS Terminal', dateTime: '2026-10-24T23:30' } } },
-  { label: 'Cashier bills for another store', req: { userId: 'u-2', app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S101' }, env: { channel: 'POS Terminal' } } },
-  { label: 'Supervisor refund ₹15,000', req: { userId: 'u-3', app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Refund', resourceAttributes: { store: 'S045', amount: '15000' }, env: { channel: 'POS Terminal' } } },
-  { label: 'Finance exec at 8:15 pm', req: { userId: 'u-4', app: 'FIN', module: 'GL', resource: 'JOURNAL', action: 'Create', resourceAttributes: {}, env: { dateTime: '2026-10-23T20:15' } } },
-  { label: 'Controller approves from Internet', req: { userId: 'u-5', app: 'FIN', module: 'AP', resource: 'VENDOR_INVOICE', action: 'Approve', resourceAttributes: { amount: '240000' }, env: { network: 'Internet' } } },
-  { label: "View someone else's payslip", req: { userId: 'u-2', app: 'HRMS', module: 'ESS', resource: 'PAYSLIP', action: 'View', resourceAttributes: { ownerEmpCode: 'VMM10003' } } },
-  { label: 'Named approver approves PO', req: { userId: 'u-5', app: 'PROC', module: 'PO', resource: 'PURCHASE_ORDER', action: 'Approve', resourceAttributes: { approverEmpCode: 'VMM10005', amount: '480000' } } },
-  { label: 'Export on personal laptop', req: { userId: 'u-8', app: 'UMS', module: 'USERS', resource: 'USER', action: 'Export', env: { device: 'Unmanaged' } } },
+  { label: 'Cashier bills on POS terminal', empCode: 'VMM10002', req: { app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S045' }, env: { channel: 'POS Terminal', dateTime: '2026-10-24T11:00' } } },
+  { label: 'Cashier bills at 23:30', empCode: 'VMM10002', req: { app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S045' }, env: { channel: 'POS Terminal', dateTime: '2026-10-24T23:30' } } },
+  { label: 'Cashier bills for another store', empCode: 'VMM10002', req: { app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Create', resourceAttributes: { store: 'S101' }, env: { channel: 'POS Terminal' } } },
+  { label: 'Supervisor refund ₹15,000', empCode: 'VMM10003', req: { app: 'POS', module: 'BILLING', resource: 'INVOICE', action: 'Refund', resourceAttributes: { store: 'S045', amount: '15000' }, env: { channel: 'POS Terminal' } } },
+  { label: 'Finance exec at 8:15 pm', empCode: 'VMM10004', req: { app: 'FIN', module: 'GL', resource: 'JOURNAL', action: 'Create', resourceAttributes: {}, env: { dateTime: '2026-10-23T20:15' } } },
+  { label: 'Controller approves from Internet', empCode: 'VMM10005', req: { app: 'FIN', module: 'AP', resource: 'VENDOR_INVOICE', action: 'Approve', resourceAttributes: { amount: '240000' }, env: { network: 'Internet' } } },
+  { label: "View someone else's payslip", empCode: 'VMM10002', req: { app: 'HRMS', module: 'ESS', resource: 'PAYSLIP', action: 'View', resourceAttributes: { ownerEmpCode: 'VMM10003' } } },
+  { label: 'Named approver approves PO', empCode: 'VMM10005', req: { app: 'PROC', module: 'PO', resource: 'PURCHASE_ORDER', action: 'Approve', resourceAttributes: { approverEmpCode: 'VMM10005', amount: '480000' } } },
+  { label: 'Export on personal laptop', empCode: 'VMM10008', req: { app: 'UMS', module: 'USERS', resource: 'USER', action: 'Export', env: { device: 'Unmanaged' } } },
 ];
 
 // scenarios run on a fixed working day (Fri 11:00) so they behave the same whenever the demo is opened
@@ -29,7 +31,7 @@ const defaultEnv = (): Environment => ({ dateTime: nowLocal(), ip: '10.12.4.21',
 const STATUS_ICON = { pass: '✓', fail: '✕', skip: '–', info: 'i' };
 
 export default function AccessSimulator() {
-  const { state, setState, tenantId, toast } = useStore();
+  const { state, recordDecision, toast } = useStore();
   const d = useTenantData();
   const [params] = useSearchParams();
   const firstApp = d.applications.find((a) => a.code === params.get('app')) ?? d.applications[0];
@@ -76,9 +78,9 @@ export default function AccessSimulator() {
   const users = d.users.filter((u) => (u.fullName + u.empCode + u.designation + u.location).toLowerCase().includes(userQ.toLowerCase())).slice(0, 200);
 
   const applyScenario = (s: Scenario) => {
-    const target = d.users.find((u) => u.id === s.req.userId);
+    const target = d.users.find((u) => u.empCode === s.empCode);
     if (!target) return toast('Scenario users exist in the Vishal Mega Mart Ltd tenant', 'error');
-    setReq({ ...req, resourceAttributes: {}, ...s.req, env: { ...defaultEnv(), dateTime: SCENARIO_TIME, ...s.req.env } } as AccessRequest);
+    setReq({ ...req, resourceAttributes: {}, ...s.req, userId: target.id, env: { ...defaultEnv(), dateTime: SCENARIO_TIME, ...s.req.env } } as AccessRequest);
   };
 
   const setApp = (code: string) => {
@@ -97,20 +99,12 @@ export default function AccessSimulator() {
     setReq({ ...req, resource: code, action: r?.actions.includes(req.action) ? req.action : r?.actions[0] ?? 'View' });
   };
 
-  const logDecision = () => {
+  const logDecision = async () => {
     if (!decision || !user) return;
-    setState((s) => ({
-      ...s,
-      actionLogs: [
-        {
-          id: newId('ua'), tenantId, timestamp: new Date().toISOString().slice(0, 19), userId: user.id, userName: user.fullName, app: req.app,
-          route: `/simulator/${req.module}/${req.resource}`.toLowerCase(), action: `${req.app}.${req.module}.${req.resource}.${req.action}`.toUpperCase(),
-          decision: decision.allowed ? 'Allow' : 'Deny', reason: decision.reason, ip: req.env.ip,
-        },
-        ...s.actionLogs,
-      ],
-    }));
-    toast('Decision recorded in the user action trail');
+    const recorded = await recordDecision(req, decision);
+    if (!recorded) return;
+    if (recorded.allowed !== decision.allowed) toast(`Server decided ${recorded.allowed ? 'PERMIT' : 'DENY'}: ${recorded.reason}`, 'error');
+    else toast(`Recorded in the user action trail (${recorded.allowed ? 'PERMIT' : 'DENY'})`);
   };
 
   return (

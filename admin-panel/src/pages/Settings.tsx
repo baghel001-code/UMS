@@ -14,17 +14,14 @@ const NUMBERS: [keyof SecuritySettings, string, string][] = [
 ];
 
 export default function Settings() {
-  const { state, setState, tenantId, audit, toast } = useStore();
+  const { saveSettings, toast } = useStore();
   const d = useTenantData();
   const [s, setS] = useState<SecuritySettings>(d.settings);
   useEffect(() => setS(d.settings), [d.settings]);
   if (!s) return <div className="empty">No settings for this tenant.</div>;
 
-  const save = () => {
-    const old = state.settings[tenantId];
-    setState((x) => ({ ...x, settings: { ...x.settings, [tenantId]: s } }));
-    audit({ entity: 'SecuritySettings', entityId: tenantId, action: 'Update', summary: `Updated security settings of ${d.tenant.name}`, oldValues: old, newValues: s });
-    toast('Settings saved');
+  const save = async () => {
+    if (await saveSettings(s)) toast('Settings saved');
   };
 
   return (

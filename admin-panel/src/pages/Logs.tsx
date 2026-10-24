@@ -200,7 +200,7 @@ export function ActionTrail() {
 }
 
 export function ExceptionLogs() {
-  const { setState, audit } = useStore();
+  const { resolveException } = useStore();
   const d = useTenantData();
   const [sev, setSev] = useState('');
   const [onlyOpen, setOnlyOpen] = useState(true);
@@ -208,10 +208,8 @@ export function ExceptionLogs() {
   const rows = d.exceptionLogs.filter((e) => (!sev || e.severity === sev) && (!onlyOpen || !e.resolved)).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const paged = usePaged(rows, 20);
 
-  const resolve = (e: ExceptionLog) => {
-    setState((s) => ({ ...s, exceptionLogs: s.exceptionLogs.map((x) => (x.id === e.id ? { ...x, resolved: true } : x)) }));
-    audit({ entity: 'ExceptionLog', entityId: e.id, action: 'Update', summary: `Marked exception resolved: ${e.message.slice(0, 60)}` });
-    setOpen(null);
+  const resolve = async (e: ExceptionLog) => {
+    if (await resolveException(e.id)) setOpen(null);
   };
 
   return (

@@ -1,11 +1,19 @@
-using ApplicationLayer.Behaviors;
+﻿using ApplicationLayer.Behaviors;
+using ApplicationLayer.Features.Users.Commands.Create;
 using ApplicationLayer.Interfaces;
 using FluentValidation;
+using Infrastructure.DependencyInjection;
 using Infrastructure.Identity;
 using Infrastructure.Options;
+using Infrastructure.Persistence;
 using MediatR;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Reflection;
+using System.Text;
+using System.Text.Json.Serialization;
+using WebApi.Middleware;
 
 
 
@@ -13,6 +21,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // --------------------- Configuration & Options ---------------------
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                     // re-add the environment file so appsettings.Development.json still overrides appsettings.json
+                     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
                      .AddEnvironmentVariables()
                      .AddCommandLine(args);
 
@@ -22,26 +32,64 @@ builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email
 
 // convenience: read JwtOptions now for JWT setup
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
-//var connectionString = builder.Configuration.GetConnectionString("Default")
-//                       ?? builder.Configuration["ConnectionStrings:Default"]
-//                       ?? throw new InvalidOperationException("Connection string 'Default' not found.");
+var persistence = builder.Configuration["Persistence:Provider"] ?? "InMemory";
+var connectionString = builder.Configuration.GetConnectionString("Default")
+                       ?? (persistence.Equals("SqlServer", StringComparison.OrdinalIgnoreCase)
+                           ? throw new InvalidOperationException("Connection string 'Default' not found.")
+                           : string.Empty);
+// HS256 needs a key of at least 256 bits; fail at startup rather than on the first login
+if (Encoding.UTF8.GetByteCount(jwtOptions.Secret) < 32)
+    throw new InvalidOperationException("Jwt:Secret must be at least 32 characters. Set it via user-secrets or an environment variable.");
 
 // --------------------- Core Services ---------------------
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddMediatR(cfg =>
 {
     // Register from the current assembly and also attempt application assembly (uncomment and change type if needed)
     cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
-    // cfg.RegisterServicesFromAssembly(typeof(CreateUserCommand).Assembly); // <- enable if available
+    cfg.RegisterServicesFromAssembly(typeof(CreateUserCommand).Assembly);
 });
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+builder.Services.AddValidatorsFromAssembly(typeof(CreateUserCommand).Assembly);
 
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>)); // adjust namespace
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<DomainLayer.Interfaces.IUserPolicyService, ApplicationLayer.Services.UserPolicyService>();
+
+// --------------------- Infrastructure & access control ---------------------
+builder.Services.AddSingleton(jwtOptions); // JwtTokenService takes JwtOptions directly
+builder.Services.AddInfrastructure(connectionString);
+builder.Services.AddAccessControl(builder.Configuration);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Secret)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = System.Security.Claims.ClaimTypes.Name,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role
+        };
+    });
+builder.Services.AddAuthorization();
+
+// the admin panel (admin-panel/) runs on another origin during development
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(options => options.AddPolicy("AdminPanel", policy =>
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -65,12 +113,15 @@ builder.Services.AddSwaggerGen(options =>
         In = ParameterLocation.Header,
         Description = "Use format: Bearer {your token}"
     });
-
-   
-
 });
 
 var app = builder.Build();
+
+// optional: fill an empty SQL Server database with the Vishal Mega Mart demo data
+if (persistence.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) && app.Configuration.GetValue("Persistence:SeedDemoData", false))
+    await DemoDataSeeder.SeedIfEmptyAsync(app.Services, app.Configuration["Persistence:DemoAdminPassword"]);
+
+app.UseMiddleware<ExceptionLoggingMiddleware>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -85,6 +136,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("AdminPanel");
 app.UseAuthentication();
 app.UseAuthorization();
 

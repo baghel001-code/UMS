@@ -100,8 +100,21 @@ const applications: Application[] = [
   app('UMS', 'User Management System', 'In-house', 'VMM IT', 'IT', 'Central identity, roles and access policies for all applications.', ALL_T, [
     ['USERS', 'Users', [['USER', 'User', ['View', 'Create', 'Edit', 'Delete', 'Export']]]],
     ['ROLES', 'Roles & Permissions', [['ROLE', 'Role', ['View', 'Create', 'Edit', 'Delete', 'Approve']]]],
-    ['POLICIES', 'ABAC Policies', [['POLICY', 'Policy', ['View', 'Create', 'Edit', 'Delete', 'Approve']]]],
-    ['LOGS', 'Audit & Logs', [['AUDIT_LOG', 'Audit log', ['View', 'Export']]]],
+    ['POLICIES', 'ABAC Policies', [
+      ['POLICY', 'Policy', ['View', 'Create', 'Edit', 'Delete', 'Approve']],
+      ['SCHEDULE', 'Office hours & holidays', ['View', 'Create', 'Edit', 'Delete']],
+      ['DECISION', 'Access check', ['View']],
+    ]],
+    ['SETUP', 'Setup', [
+      ['TENANT', 'Tenant', ['View', 'Create', 'Edit']],
+      ['APPLICATION', 'Application', ['View', 'Create', 'Edit', 'Delete']],
+      ['SETTINGS', 'Security settings', ['View', 'Edit']],
+    ]],
+    ['LOGS', 'Audit & Logs', [
+      ['AUDIT_LOG', 'Audit log', ['View', 'Export']],
+      ['ACTION_LOG', 'User action trail', ['View', 'Export']],
+      ['EXCEPTION_LOG', 'Exception log', ['View', 'Edit']],
+    ]],
   ]),
   app('POS', 'Point of Sale', 'In-house', 'VMM IT', 'Retail Operations', 'Store billing, returns and shift management on POS terminals.', ALL_T, [
     ['BILLING', 'Billing', [

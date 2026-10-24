@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Drawer, Field, KeyValueEditor, Modal, PageHead, StatusBadge, Tabs, downloadCsv, fmtDateTime, usePaged } from '../components/ui';
 import { nowLocal, REGIONS } from '../data/seed';
 import { isAssignmentActive, permissionKey, permissionMatches } from '../engine/pdp';
@@ -32,12 +32,13 @@ function blankUser(tenantId: string, n: number): User {
 }
 
 export default function Users() {
-  const { tenantId, state, setState, audit, toast } = useStore();
+  const { tenantId, state, bulkUsers, importUsers, toast } = useStore();
   const d = useTenantData();
   const [q, setQ] = useState('');
   const [f, setF] = useState({ dept: '', status: '', role: '', region: '', emp: '' });
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [open, setOpen] = useState<User | null>(null);
+  const [params] = useSearchParams();
+  const [open, setOpen] = useState<User | null>(() => (params.get('new') ? blankUser(tenantId, d.users.length) : null));
   const [bulkRole, setBulkRole] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -58,12 +59,12 @@ export default function Users() {
   const paged = usePaged(rows, 20);
   const roleName = (id: string) => d.roles.find((r) => r.id === id)?.code ?? '?';
 
-  const bulkStatus = (status: UserStatus) => {
-    const ids = selected;
-    setState((s) => ({ ...s, users: s.users.map((u) => (ids.has(u.id) ? { ...u, status } : u)) }));
-    audit({ entity: 'User', entityId: [...ids].join(','), action: 'Update', summary: `Bulk set status ${status} on ${ids.size} user(s)`, newValues: { status } });
-    toast(`${ids.size} user(s) set to ${status}`);
-    setSelected(new Set());
+  const bulkStatus = async (status: UserStatus) => {
+    const ids = [...selected];
+    if (await bulkUsers(ids, { status })) {
+      toast(`${ids.length} user(s) set to ${status}`);
+      setSelected(new Set());
+    }
   };
 
   const importCsv = async (file: File) => {
@@ -82,14 +83,14 @@ export default function Users() {
       if (!rec.empCode || existing.has(rec.empCode)) return;
       created.push({
         ...blankUser(tenantId, i),
+        id: newId(),
         ...rec,
         employmentType: (EMP_TYPES.includes(rec.employmentType as EmploymentType) ? rec.employmentType : 'Permanent') as EmploymentType,
         roles: employee ? [{ roleId: employee.id, scope: {}, validFrom: null, validTo: null, assignedBy: CURRENT_ADMIN, assignedOn: nowLocal().slice(0, 10) }] : [],
       } as User);
     });
-    setState((s) => ({ ...s, users: [...s.users, ...created] }));
-    audit({ entity: 'User', entityId: 'bulk-import', action: 'Create', summary: `Bulk imported ${created.length} user(s) from ${file.name}` });
-    toast(`Imported ${created.length} user(s); ${lines.length - created.length} skipped (duplicate / blank empCode)`);
+    const res = await importUsers(created);
+    if (res) toast(`Imported ${res.created} user(s) from ${file.name}; ${lines.length - res.created} skipped (duplicate / blank empCode / invalid)`);
   };
 
   return (
@@ -279,13 +280,13 @@ export default function Users() {
       {bulkRole && (
         <AssignRoleModal
           onClose={() => setBulkRole(false)}
-          onAssign={(a) => {
-            const ids = selected;
-            setState((s) => ({ ...s, users: s.users.map((u) => (ids.has(u.id) && !u.roles.some((r) => r.roleId === a.roleId) ? { ...u, roles: [...u.roles, a] } : u)) }));
-            audit({ entity: 'User', entityId: [...ids].join(','), action: 'Assign', summary: `Bulk assigned ${roleName(a.roleId)} to ${ids.size} user(s)`, newValues: a });
-            toast(`Assigned ${roleName(a.roleId)} to ${ids.size} user(s)`);
-            setSelected(new Set());
-            setBulkRole(false);
+          onAssign={async (a) => {
+            const ids = [...selected];
+            if (await bulkUsers(ids, { assignRole: a })) {
+              toast(`Assigned ${roleName(a.roleId)} to ${ids.length} user(s)`);
+              setSelected(new Set());
+              setBulkRole(false);
+            }
           }}
         />
       )}
@@ -348,7 +349,8 @@ function AssignRoleModal({ onClose, onAssign, exclude = [] }: { onClose: () => v
 }
 
 function UserDrawer({ user: initial, onClose }: { user: User; onClose: () => void }) {
-  const { state, upsert, audit, toast } = useStore();
+  const { state, upsert, setPassword, toast } = useStore();
+  const [password, setPasswordText] = useState('');
   const d = useTenantData();
   const nav = useNavigate();
   const [u, setU] = useState(initial);
@@ -358,7 +360,7 @@ function UserDrawer({ user: initial, onClose }: { user: User; onClose: () => voi
   const set = (p: Partial<User>) => setU({ ...u, ...p });
   const now = new Date(nowLocal());
 
-  const save = () => {
+  const save = async () => {
     if (!u.fullName.trim() || !/^\S+@\S+\.\S+$/.test(u.email)) return toast('Name and a valid email are required', 'error');
     if (state.users.some((x) => x.empCode === u.empCode && x.id !== u.id)) return toast('Employee code already exists', 'error');
     const before = state.users.find((x) => x.id === u.id);
@@ -366,9 +368,10 @@ function UserDrawer({ user: initial, onClose }: { user: User; onClose: () => voi
     const added = u.roles.filter((a) => !before?.roles.some((b) => b.roleId === a.roleId)).map(code);
     const revoked = (before?.roles ?? []).filter((b) => !u.roles.some((a) => a.roleId === b.roleId)).map(code);
     const parts = [added.length && `assigned ${added.join(', ')}`, revoked.length && `revoked ${revoked.join(', ')}`].filter(Boolean);
-    upsert('users', u, `${before ? 'Updated' : 'Created'} user ${u.fullName}${parts.length ? ` — ${parts.join('; ')}` : ''}`);
-    toast(`Saved ${u.fullName}`);
-    onClose();
+    if (await upsert('users', u, `${before ? 'Updated' : 'Created'} user ${u.fullName}${parts.length ? ` — ${parts.join('; ')}` : ''}`)) {
+      toast(`Saved ${u.fullName}`);
+      onClose();
+    }
   };
 
   const effective = useMemo(() => {
@@ -484,23 +487,24 @@ function UserDrawer({ user: initial, onClose }: { user: User; onClose: () => voi
           </datalist>
           {!isNew && (
             <div className="row">
+              <input
+                type="password"
+                placeholder="New password (min 8, Aa1)"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPasswordText(e.target.value)}
+              />
               <button
                 className="btn"
-                onClick={() => {
-                  audit({ entity: 'User', entityId: u.id, action: 'Reset', summary: `Password reset link sent to ${u.email}` });
-                  toast('Password reset link sent');
+                disabled={password.length < 8}
+                onClick={async () => {
+                  if (await setPassword(u.id, password)) {
+                    toast(`Password set for ${u.fullName}`);
+                    setPasswordText('');
+                  }
                 }}
               >
-                Send password reset
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  audit({ entity: 'User', entityId: u.id, action: 'Reset', summary: `Revoked all sessions / refresh tokens of ${u.fullName}` });
-                  toast('All sessions revoked');
-                }}
-              >
-                Revoke sessions
+                Set password
               </button>
               {u.status === 'Locked' && (
                 <button className="btn" onClick={() => set({ status: 'Active' })}>

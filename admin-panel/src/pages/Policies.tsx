@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Field, Modal, PageHead } from '../components/ui';
 import { OPERATOR_LABELS, policyExpression } from '../engine/pdp';
 import { CURRENT_ADMIN, newId, useStore, useTenantData } from '../store/store';
@@ -36,16 +36,17 @@ export default function Policies() {
   const d = useTenantData();
   const [q, setQ] = useState('');
   const [effect, setEffect] = useState<'' | PolicyEffect>('');
-  const [editing, setEditing] = useState<Policy | null>(null);
+  const blank = (): Policy => ({
+    id: newId('pol'), tenantId, name: '', description: '', effect: 'Restrict', priority: 100, match: 'all', isActive: true, createdBy: CURRENT_ADMIN, createdAt: new Date().toISOString().slice(0, 19),
+    target: { app: '*', module: '*', resource: '*', actions: ['*'], roles: [] }, conditions: [],
+  });
+  const [params] = useSearchParams();
+  const [editing, setEditing] = useState<Policy | null>(() => (params.get('new') ? blank() : null));
 
   const rows = d.policies
     .filter((p) => (!effect || p.effect === effect) && (p.name + p.description + JSON.stringify(p.target)).toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => a.priority - b.priority);
 
-  const blank = (): Policy => ({
-    id: newId('pol'), tenantId, name: '', description: '', effect: 'Restrict', priority: 100, match: 'all', isActive: true, createdBy: CURRENT_ADMIN, createdAt: new Date().toISOString().slice(0, 19),
-    target: { app: '*', module: '*', resource: '*', actions: ['*'], roles: [] }, conditions: [],
-  });
 
   return (
     <>
@@ -138,13 +139,14 @@ function PolicyEditor({ policy: initial, onClose }: { policy: Policy; onClose: (
   const allActions = (p.target.actions as string[]).includes('*');
   const defaultSchedule = d.schedules[0]?.id ?? '';
 
-  const save = () => {
+  const save = async () => {
     if (!p.name.trim()) return toast('Policy name is required', 'error');
     if (p.effect !== 'Restrict' && p.conditions.length === 0) return toast(`${p.effect} policy without conditions would match every request`, 'error');
     if (p.conditions.some((x) => !x.attribute || (!x.value && !x.operator.includes('Schedule')))) return toast('Every condition needs an attribute and value', 'error');
-    upsert('policies', p, `${isNew ? 'Created' : 'Updated'} policy '${p.name}' (${p.effect})`);
-    toast('Policy saved');
-    onClose();
+    if (await upsert('policies', p, `${isNew ? 'Created' : 'Updated'} policy '${p.name}' (${p.effect})`)) {
+      toast('Policy saved');
+      onClose();
+    }
   };
 
   return (
@@ -157,11 +159,8 @@ function PolicyEditor({ policy: initial, onClose }: { policy: Policy; onClose: (
           {!isNew && (
             <button
               className="btn danger"
-              onClick={() => {
-                if (confirm(`Delete policy '${p.name}'?`)) {
-                  remove('policies', p.id);
-                  onClose();
-                }
+              onClick={async () => {
+                if (confirm(`Delete policy '${p.name}'?`) && (await remove('policies', p.id))) onClose();
               }}
             >
               Delete

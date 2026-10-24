@@ -116,11 +116,12 @@ function AppEditor({ app: initial, onClose }: { app: Application; onClose: () =>
   const updateModule = (mi: number, fn: (m: Application['modules'][number]) => Application['modules'][number]) =>
     set({ modules: app.modules.map((m, i) => (i === mi ? fn(m) : m)) });
 
-  const save = () => {
+  const save = async () => {
     if (errors.length) return toast(errors[0], 'error');
-    upsert('applications', app, `${isNew ? 'Registered' : 'Updated'} application ${app.code}`);
-    toast(`Saved ${app.name}`);
-    onClose();
+    if (await upsert('applications', app, `${isNew ? 'Registered' : 'Updated'} application ${app.code}`)) {
+      toast(`Saved ${app.name}`);
+      onClose();
+    }
   };
 
   return (
@@ -133,11 +134,8 @@ function AppEditor({ app: initial, onClose }: { app: Application; onClose: () =>
           {!isNew && (
             <button
               className="btn danger"
-              onClick={() => {
-                if (confirm(`Delete ${app.name}? Roles referencing ${app.code}.* will no longer grant anything.`)) {
-                  remove('applications', app.id);
-                  onClose();
-                }
+              onClick={async () => {
+                if (confirm(`Delete ${app.name}? Roles referencing ${app.code}.* will no longer grant anything.`) && (await remove('applications', app.id))) onClose();
               }}
             >
               Delete

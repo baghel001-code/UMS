@@ -107,10 +107,10 @@ export default function Schedules() {
             ))}
             <button
               className="btn"
-              onClick={() => {
+              onClick={async () => {
                 if (!hol.date || !hol.name) return toast('Date and name are required', 'error');
-                upsert('holidays', { ...hol, id: newId('hol'), tenantId }, `Added holiday ${hol.name} on ${hol.date}`);
-                setHol({ id: '', tenantId, date: '', name: '', regions: [] });
+                if (await upsert('holidays', { ...hol, id: newId(), tenantId }, `Added holiday ${hol.name} on ${hol.date}`))
+                  setHol({ id: '', tenantId, date: '', name: '', regions: [] });
               }}
             >
               + Add holiday
@@ -169,9 +169,8 @@ function ScheduleEditor({ schedule: initial, onClose, inUse }: { schedule: Sched
               className="btn danger"
               disabled={inUse > 0}
               title={inUse ? 'Used by policies' : ''}
-              onClick={() => {
-                remove('schedules', s.id);
-                onClose();
+              onClick={async () => {
+                if (await remove('schedules', s.id)) onClose();
               }}
             >
               Delete
@@ -183,12 +182,13 @@ function ScheduleEditor({ schedule: initial, onClose, inUse }: { schedule: Sched
           </button>
           <button
             className="btn primary"
-            onClick={() => {
+            onClick={async () => {
               if (!s.code || !s.name) return toast('Code and name are required', 'error');
               if (s.windows.some((w) => w.days.length === 0)) return toast('Each window needs at least one day', 'error');
-              upsert('schedules', s);
-              toast('Schedule saved');
-              onClose();
+              if (await upsert('schedules', s)) {
+                toast('Schedule saved');
+                onClose();
+              }
             }}
           >
             Save
