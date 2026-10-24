@@ -3,7 +3,7 @@ using ApplicationLayer.Exceptions;
 using DomainLayer.Entities;
 using DomainLayer.Interfaces;
 using DomainLayer.ValueObjects;
-using MediatR;
+using VMM.Mediator;
 using System;
 using System.Collections.Generic;
 using System.Linq;

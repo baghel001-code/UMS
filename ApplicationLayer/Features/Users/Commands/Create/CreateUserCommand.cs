@@ -1,7 +1,7 @@
 ﻿using ApplicationLayer.Common;
 using ApplicationLayer.Features.Users.DTOs;
 using DomainLayer.ValueObjects;
-using MediatR;
+using VMM.Mediator;
 using System;
 using System.Collections.Generic;
 using System.Linq;

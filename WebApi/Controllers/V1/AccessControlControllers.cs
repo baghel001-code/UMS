@@ -12,7 +12,7 @@ using ApplicationLayer.Features.AccessControl.UserAccounts;
 using ApplicationLayer.Interfaces;
 using DomainLayer.Entities;
 using DomainLayer.Enumerations;
-using MediatR;
+using VMM.Mediator;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WebApi.Filters;
@@ -20,7 +20,7 @@ using A = DomainLayer.Enumerations.AccessAction;
 
 namespace WebApi.Controllers.V1
 {
-    /// <summary>Shared plumbing: MediatR, the tenant of the request (X-Tenant-Id) and Result → HTTP mapping.</summary>
+    /// <summary>Shared plumbing: the mediator, the tenant of the request (X-Tenant-Id) and Result → HTTP mapping.</summary>
     [ApiController]
     [Produces("application/json")]
     public abstract class AccessControlControllerBase : ControllerBase

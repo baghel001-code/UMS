@@ -7,7 +7,7 @@ using DomainLayer.Entities;
 using DomainLayer.Enumerations;
 using DomainLayer.Services;
 using DomainLayer.ValueObjects;
-using MediatR;
+using VMM.Mediator;
 
 namespace ApplicationLayer.Features.AccessControl.Authorization
 {

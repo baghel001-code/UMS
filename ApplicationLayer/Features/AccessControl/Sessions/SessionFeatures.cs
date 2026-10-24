@@ -5,7 +5,7 @@ using ApplicationLayer.Interfaces;
 using DomainLayer.Entities;
 using DomainLayer.Enumerations;
 using FluentValidation;
-using MediatR;
+using VMM.Mediator;
 using System.Security.Cryptography;
 using System.Text;
 

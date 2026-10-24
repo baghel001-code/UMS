@@ -15,13 +15,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AutoMapper" Version="15.1.0" />
     <PackageReference Include="FluentValidation" Version="12.1.0" />
-    <PackageReference Include="MediatR" Version="13.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DomainLayer\DomainLayer.csproj" />
+    <ProjectReference Include="..\BuildingBlocks\VMM.Mediator\VMM.Mediator.csproj" />
+    <ProjectReference Include="..\BuildingBlocks\VMM.Mapper\VMM.Mapper.csproj" />
   </ItemGroup>
 
 </Project>

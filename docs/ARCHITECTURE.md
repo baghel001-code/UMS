@@ -85,7 +85,7 @@ Example: `Restrict PAYROLL.*.*.* WHEN InSchedule(env.now, 'GENERAL')`.
         ┌───────▼───────────────────────────────────────────▼──────┐
         │ UMS API (ASP.NET Core)                                    │
         │  ExceptionLoggingMiddleware → JWT auth → RequirePermission │
-        │  → MediatR handlers (ApplicationLayer) → repositories      │
+        │  → VMM.Mediator handlers (ApplicationLayer) → repositories │
         │  AccessDecisionService · IAuditService · ILogRepository    │
         │  ICurrentTenantService · ITokenIssuer · IPasswordHasher    │
         └───────┬─────────────────────────────┬────────────────────┘

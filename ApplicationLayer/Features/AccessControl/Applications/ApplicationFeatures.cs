@@ -6,7 +6,7 @@ using ApplicationLayer.Mapping;
 using DomainLayer.Entities;
 using DomainLayer.Enumerations;
 using FluentValidation;
-using MediatR;
+using VMM.Mediator;
 
 namespace ApplicationLayer.Features.AccessControl.Applications
 {

@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 namespace ApplicationLayer.Mapping
 {
     // Hand-written mappings: the access-control aggregates use constructors and private collections,
-    // which AutoMapper cannot populate without extra configuration.
+    // which a convention mapper (VMM.Mapper) cannot populate; explicit code keeps the domain rules visible.
     public static class AccessControlMappings
     {
         public static TenantDto ToDto(this Tenant t) => new(t.Id, t.Code, t.Name, t.IsActive, t.CreatedOn);

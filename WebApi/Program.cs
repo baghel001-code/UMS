@@ -6,7 +6,8 @@ using Infrastructure.DependencyInjection;
 using Infrastructure.Identity;
 using Infrastructure.Options;
 using Infrastructure.Persistence;
-using MediatR;
+using VMM.Mapper;
+using VMM.Mediator;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -45,18 +46,20 @@ if (Encoding.UTF8.GetByteCount(jwtOptions.Secret) < 32)
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-builder.Services.AddMediatR(cfg =>
+// in-house mediator (BuildingBlocks/VMM.Mediator): handlers from the API and application assemblies
+builder.Services.AddMediator(cfg =>
 {
-    // Register from the current assembly and also attempt application assembly (uncomment and change type if needed)
     cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
     cfg.RegisterServicesFromAssembly(typeof(CreateUserCommand).Assembly);
 });
+// in-house object mapper (BuildingBlocks/VMM.Mapper): profiles are validated at start-up
+builder.Services.AddObjectMapper(typeof(CreateUserCommand).Assembly);
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 builder.Services.AddValidatorsFromAssembly(typeof(CreateUserCommand).Assembly);
 
-builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>)); // adjust namespace
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<DomainLayer.Interfaces.IUserPolicyService, ApplicationLayer.Services.UserPolicyService>();

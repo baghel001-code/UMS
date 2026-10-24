@@ -1,26 +1,21 @@
 ﻿using ApplicationLayer.Features.Users.DTOs;
-using AutoMapper;
 using DomainLayer.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using DomainLayer.Enumerations;
+using VMM.Mapper;
 
 namespace ApplicationLayer.Mapping
 {
-    public class UserProfile : Profile
+    /// <summary>
+    /// Maps of the user feature (in-house VMM.Mapper). Only entity → DTO: a User is created and changed through its
+    /// constructors and methods so the domain rules run, never by copying a DTO onto it.
+    /// </summary>
+    public class UserProfile : MapperProfile
     {
         public UserProfile()
         {
-            CreateMap<User, UserDto>().ReverseMap();
-            CreateMap<CreateUserDto, User>()
-                .ForMember(dest => dest.Id, opt => opt.Ignore());    // repository sets Id
-                                                                     // .ForMember(dest => dest.PasswordHash, opt => opt.Ignore()); // set after hashing
-
-            CreateMap<UpdateUserDto, User>();
-               // .ForMember(dest => dest.PasswordHash, opt => opt.Ignore()); // handled in handler
+            CreateMap<User, UserDto>()
+                .ForMember(d => d.Role, u => u.Roles.FirstOrDefault(r => r.IsPrimary) ?? u.Roles.FirstOrDefault()!)
+                .ForMember(d => d.IsActive, u => u.Status == UserStatus.Active);
         }
     }
 }

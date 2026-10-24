@@ -24,7 +24,7 @@ and UMS authorises every action (see [docs/ASSET_MANAGEMENT.md](docs/ASSET_MANAG
 src
 ├── DomainLayer/          Entities (User, Tenant, Application, Role, Policy, Schedule, …), PermissionKey,
 │                         AccessDecisionService (the decision engine), ScheduleEvaluator, ConditionEvaluator
-├── ApplicationLayer/     MediatR commands/queries under Features/AccessControl/*, DTOs, validators,
+├── ApplicationLayer/     Commands/queries (VMM.Mediator) under Features/AccessControl/*, DTOs, validators,
 │                         repository & service ports (Interfaces/), AccessContextProvider
 ├── Infrastructure/       Persistence/InMemory (demo data), Persistence/SqlServer (Dapper), DemoSeed,
 │                         audit/tenant/password/token services, DI (AddAccessControl)
@@ -44,7 +44,11 @@ AssetManagement           Asset Management System – a client application prote
 ├── AMS.Portal/           Blazor Server + MudBlazor web portal; signs in through UMS, calls AMS.Api only.
 │                         Single-device login, idle timeout, token refresh
 └── database/             001_ams_schema.sql, 002_ams_procedures.sql (SQL Server)
+BuildingBlocks            In-house libraries used instead of commercially licensed packages
+├── VMM.Mediator/         Request/handler mediator with pipeline behaviours and event publishing (replaces MediatR)
+└── VMM.Mapper/           Convention object mapper with profiles, ForMember/Ignore, validation (replaces AutoMapper)
 tests
+├── BuildingBlocks.Tests/ xUnit tests of VMM.Mediator and VMM.Mapper
 ├── UMS.Tests/            xUnit tests: decision engine, schedules, storage formats, sessions, AMS policies
 └── AMS.Tests             (AssetManagement/AMS.Tests) use cases, API client, UMS guard, e-mail, SQL procedures
 database/                 001 schema, 002 sign-in sessions and lockout (SQL Server)
@@ -75,7 +79,7 @@ dotnet run --project WebApi --launch-profile http
 dotnet run --project UMS.AdminPortal --launch-profile http
 dotnet run --project AssetManagement/AMS.Api --launch-profile http
 dotnet run --project AssetManagement/AMS.Portal --launch-profile http
-dotnet test UMS_Sol.sln                    # 74 xUnit tests (UMS 45 + AMS 29; 4 need AMS_TEST_SQL)
+dotnet test UMS_Sol.sln                    # 88 xUnit tests (UMS 45 + AMS 29 + building blocks 14; 4 need AMS_TEST_SQL)
 ```
 
 The portal finds the API through `UmsApi:BaseUrl` in `UMS.AdminPortal/appsettings.json`.
@@ -186,3 +190,21 @@ Set `EmailServerSettings` (SMTP) and `Notifications` for real mail.
 - **Lockout.** `MaxFailedLogins` failed attempts lock the account for `LockoutMinutes`.
 - **Active Sessions** in the UMS admin portal lists who is signed in to which application, from where. An
   administrator can end any session; AMS signs that user out within a minute.
+
+## Third-party packages
+
+Only free, open-source packages are used: Microsoft ASP.NET Core / Extensions, Dapper, Microsoft.Data.SqlClient,
+FluentValidation, MudBlazor, Serilog, Swashbuckle, and xUnit / NSubstitute for tests. MediatR and AutoMapper (now
+commercially licensed) were replaced by the in-house `BuildingBlocks/VMM.Mediator` and `BuildingBlocks/VMM.Mapper`.
+
+- **VMM.Mediator.** `services.AddMediator(cfg => cfg.RegisterServicesFromAssembly(...).AddOpenBehavior(typeof(X<,>)))`.
+  Requests (`IRequest<T>`) go to `IRequestHandler<,>` through `IPipelineBehavior<,>`s, which run in registration order.
+  Events go through `IPublisher.Publish` to every `INotificationHandler<T>` of the event type or its base types.
+- **VMM.Mapper.** Write a `MapperProfile` with `CreateMap<TSource, TDestination>()`, then call
+  `services.AddObjectMapper(assembly)` and inject `IMapper`. Members map by name. Records are built through their
+  constructor. Supported conversions:
+  - enum ↔ string and nullable unwrapping;
+  - nested maps and collections.
+
+  Use `ForMember`, `Ignore` and `ConstructUsing` for anything else. The configuration is validated at start-up.
+  Entities with domain rules are still built through their constructors and methods, not mapped into.

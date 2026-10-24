@@ -1,6 +1,6 @@
 ﻿using DomainLayer.Events;
 using DomainLayer.Interfaces;
-using MediatR;
+using VMM.Mediator;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -6,7 +6,7 @@ using ApplicationLayer.Mapping;
 using DomainLayer.Entities;
 using DomainLayer.Enumerations;
 using FluentValidation;
-using MediatR;
+using VMM.Mediator;
 using System.Text.Json;
 
 namespace ApplicationLayer.Features.AccessControl.Policies

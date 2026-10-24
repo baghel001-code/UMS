@@ -4,7 +4,7 @@ using ApplicationLayer.Features.AccessControl.DTOs;
 using ApplicationLayer.Interfaces;
 using ApplicationLayer.Mapping;
 using DomainLayer.Enumerations;
-using MediatR;
+using VMM.Mediator;
 
 namespace ApplicationLayer.Features.AccessControl.Logs
 {
