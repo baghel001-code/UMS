@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VMM UMS &amp; AMS – Business Rules and Validations</title>
+<link rel="stylesheet" href="docs.css">
+<style>
+  table.br td:first-child { white-space: nowrap; font-weight: 700; color: var(--blue); }
+  .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 3mm 0 5mm; }
+  .kpi div { background: var(--tint); border: 1px solid var(--line); border-radius: 2mm; padding: 3mm; text-align: center; }
+  .kpi b { display: block; font-size: 18pt; color: var(--navy); font-family: "Inter Display", Inter, sans-serif; }
+  .kpi span { font-size: 8.4pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="logo">V</div>
+  <div class="band">Document 3 of 3<br>Companion documents: User Manual · Technical Logic Reference</div>
+  <div class="kicker">Vishal Mega Mart · IT Applications</div>
+  <h1>Business Rules &amp; Validations</h1>
+  <div class="sub">The controls built into the User Management System and the Asset Management System, for management, process owners and auditors.</div>
+  <div class="meta">
+    <div><b>Applies to</b>User Management System (UMS) · Asset Management System (AMS)</div>
+    <div><b>Audience</b>Management, process owners, internal audit, information security</div>
+    <div><b>Version</b>1.0 · October 2026</div>
+  </div>
+</section>
+
+<h1 class="chapter" style="page-break-before:avoid">Contents</h1>
+<div class="toc">
+  <div><span>1</span>Executive summary</div>
+  <div><span>2</span>Governance: who owns what</div>
+  <div><span>3</span>Access control rules</div>
+  <div><span>4</span>Sign-in and session security rules</div>
+  <div><span>5</span>Asset management business rules</div>
+  <div class="sub">5.1 Assets · 5.2 Issue and return · 5.3 Requests and approvals · 5.4 Licences · 5.5 Stock · 5.6 Maintenance and audits · 5.7 Disposal · 5.8 Master data</div>
+  <div><span>6</span>Data validations</div>
+  <div><span>7</span>Notifications and management reporting</div>
+  <div><span>8</span>Audit trail and traceability</div>
+  <div><span>9</span>Control status, gaps and recommendations</div>
+  <div><span>10</span>How rules are changed</div>
+</div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">1</span>Executive summary</h1>
+<p class="lead">The <b>User Management System (UMS)</b> controls who may use each company application and what they may do in it. The <b>Asset Management System (AMS)</b> keeps the register of company assets (equipment, software licences and stock), records who holds what, and runs requests, approvals, maintenance and audits.</p>
+
+<div class="kpi">
+  <div><b>1</b><span>place where access is decided (UMS) for every application</span></div>
+  <div><b>7</b><span>checks on every action: organisation, person, application, module, permission, location, policy</span></div>
+  <div><b>7</b><span>asset-specific policies (hours, value limits, segregation of duties, MFA, own items…)</span></div>
+  <div><b>100%</b><span>of changes and decisions are recorded with who, what, when</span></div>
+</div>
+
+<h2>Key controls at a glance</h2>
+<div class="cards">
+  <div class="card"><h4>No access without a role</h4><p>Access comes only from roles given in UMS and from approved policies. Nobody, not even the AMS software, can bypass UMS.</p></div>
+  <div class="card"><h4>Least privilege by location</h4><p>Roles can be limited to stores, DCs or offices, and to a period (temporary cover ends by itself).</p></div>
+  <div class="card"><h4>Segregation of duties</h4><p>Nobody approves their own asset request. Approvers need MFA. Managers cannot dispose high-value assets.</p></div>
+  <div class="card"><h4>Value-based limits</h4><p>Assets over ₹1,50,000 are not issued to contract, intern or vendor staff. Refunds over ₹10,000 need a Store Manager.</p></div>
+  <div class="card"><h4>Secure sessions</h4><p>One device per person, automatic sign-out when idle, lockout after 5 wrong passwords, admins can end any session.</p></div>
+  <div class="card"><h4>Fail safe</h4><p>If the access service cannot be reached, nothing is shown or changed. A missing piece of information never grants access.</p></div>
+</div>
+
+<div class="note"><b>Changing a rule needs no software change</b>Limits, hours, roles and policies are data in UMS. An authorised administrator changes them in the UMS Admin Portal, and the change applies at once to every application. Every change is logged with its before and after values.</div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">2</span>Governance: who owns what</h1>
+<table>
+  <thead><tr><th>Responsibility</th><th>Owner (role)</th><th>Tool</th></tr></thead>
+  <tbody>
+    <tr><td>Creating users, giving and removing roles, resetting passwords</td><td>UMS Administrator (IT) on request of the line manager / HR</td><td>UMS Admin Portal → Users</td></tr>
+    <tr><td>Defining roles and their permissions</td><td>UMS Administrator with the application owner</td><td>Roles &amp; Permissions</td></tr>
+    <tr><td>Policies (hours, limits, segregation of duties)</td><td>Process owner approves; UMS Administrator configures</td><td>ABAC Policies, Office Hours &amp; Holidays</td></tr>
+    <tr><td>Security settings (passwords, idle time, lockout, single device)</td><td>Information Security</td><td>Security Settings</td></tr>
+    <tr><td>Asset register and master data (models, categories, locations, suppliers)</td><td>Asset Administrator (central IT)</td><td>AMS → Setup</td></tr>
+    <tr><td>Day-to-day issue, return, audit and maintenance of a location's assets</td><td>Asset Manager of that location</td><td>AMS</td></tr>
+    <tr><td>Approving asset requests</td><td>Asset Manager / Administrator (not the requester)</td><td>AMS → Asset Requests</td></tr>
+    <tr><td>Independent review</td><td>Internal Auditor (read-only role)</td><td>Both portals: audit trail, action trail, reports</td></tr>
+    <tr><td>Emergency full access</td><td>Super Administrator (break-glass only; use is logged)</td><td>Both portals</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">3</span>Access control rules</h1>
+<p>These rules apply to every application connected to UMS. AMS is one of them.</p>
+
+<h2>3.1 General principles</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th><th>Why it matters</th></tr></thead>
+  <tbody>
+    <tr><td>AC-01</td><td>Every action is checked in seven steps: organisation active → person active and not expired → access to the application → to the module → the exact permission → within the role's locations → company policies. The first failing step refuses the action and shows the reason.</td><td>One consistent, explainable decision for all applications.</td></tr>
+    <tr><td>AC-02</td><td>Access comes only from roles (or an approved Grant policy, e.g. "you may see the asset issued to you"). No access is coded into applications.</td><td>Access can be reviewed and changed in one place.</td></tr>
+    <tr><td>AC-03</td><td>A role may be limited to locations (stores, DCs, offices). A record outside them is refused.</td><td>Least privilege; a store manager cannot act for another store.</td></tr>
+    <tr><td>AC-04</td><td>A role may have start and end dates; outside them it does not count.</td><td>Temporary cover ends automatically (no forgotten access).</td></tr>
+    <tr><td>AC-05</td><td>Information that is missing never satisfies a rule: if a record lacks the value a policy checks, a "must" rule fails and an "allow" rule does not apply.</td><td>The system fails safe.</td></tr>
+    <tr><td>AC-06</td><td>A person's data is only visible within their organisation (tenant). Only an active Super Administrator can work across organisations.</td><td>Separation between Vishal Mega Mart, vendors and test data.</td></tr>
+    <tr><td>AC-07</td><td>UMS protects its own administration with the same rules (e.g. only roles with UMS user-edit permission can change users).</td><td>Administrators are controlled like everyone else.</td></tr>
+  </tbody>
+</table>
+
+<h2>3.2 Company policies configured today</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Policy</th><th>Type</th><th>Applies to</th></tr></thead>
+  <tbody>
+    <tr><td>PO-01</td><td>Finance executives only during office hours (Mon–Sat 09:30–18:30, not holidays)</td><td><span class="pill">Restrict</span></td><td>Finance ERP</td></tr>
+    <tr><td>PO-02</td><td>Payroll only during office hours</td><td><span class="pill">Restrict</span></td><td>Payroll</td></tr>
+    <tr><td>PO-03</td><td>Cashiers and supervisors bill only during store hours (08:00–23:00) and only from a POS terminal</td><td><span class="pill">Restrict</span></td><td>POS</td></tr>
+    <tr><td>PO-04</td><td>Shift supervisors cannot refund above ₹10,000 (Store Manager needed)</td><td><span class="pill red">Deny</span></td><td>POS</td></tr>
+    <tr><td>PO-05</td><td>HR executives edit or delete employees of their own region only</td><td><span class="pill">Restrict</span></td><td>HRMS</td></tr>
+    <tr><td>PO-06</td><td>Payslips: own record only, unless HR Manager or Payroll Admin</td><td><span class="pill">Restrict</span></td><td>HRMS</td></tr>
+    <tr><td>PO-07</td><td>The approver named on a PO may view and approve it</td><td><span class="pill green">Grant</span></td><td>Procurement</td></tr>
+    <tr><td>PO-08</td><td>No data export from personal / unmanaged devices</td><td><span class="pill red">Deny</span></td><td>All applications</td></tr>
+    <tr><td>PO-09</td><td>Contract, intern and vendor staff cannot delete records</td><td><span class="pill red">Deny</span></td><td>All applications</td></tr>
+    <tr><td>PO-10</td><td>Finance approvals need MFA and the office network or VPN</td><td><span class="pill">Restrict</span></td><td>Finance ERP</td></tr>
+    <tr><td>PO-11</td><td>Store managers act only on their own store's records</td><td><span class="pill">Restrict</span></td><td>Store Operations</td></tr>
+    <tr><td>PO-12</td><td>Vendors see only their own POs, during vendor portal hours</td><td><span class="pill">Restrict</span></td><td>Procurement (vendor network)</td></tr>
+    <tr><td>PO-13 … PO-19</td><td>Asset Management policies: see chapter 5</td><td></td><td>AMS</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">4</span>Sign-in and session security rules</h1>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th><th>Setting (Vishal Mega Mart)</th></tr></thead>
+  <tbody>
+    <tr><td>SS-01</td><td>Sign-in needs the company e-mail and password. A wrong e-mail and a wrong password give the same message, so it cannot be used to discover accounts.</td><td>—</td></tr>
+    <tr><td>SS-02</td><td>After repeated wrong passwords the account locks for a period.</td><td>5 attempts · 30 minutes</td></tr>
+    <tr><td>SS-03</td><td>Inactive, locked or expired accounts (e.g. contract end date passed), and accounts of inactive organisations, cannot sign in. A running session of such an account stops at its next token renewal.</td><td>—</td></tr>
+    <tr><td>SS-04</td><td>Signing in is allowed only to applications enabled for the person's organisation.</td><td>—</td></tr>
+    <tr><td>SS-05</td><td><b>Single-device login</b>: a new sign-in to an application ends the person's other session in that application; the other device shows why.</td><td>On</td></tr>
+    <tr><td>SS-06</td><td><b>Idle timeout</b>: no activity for the set time signs the person out, after a one-minute warning; the session is closed in UMS as "Idle".</td><td>30 minutes</td></tr>
+    <tr><td>SS-07</td><td>Short-lived access tokens are renewed silently while the person works. The renewal key changes every time; if an old key is used again (possible theft), the session ends at once.</td><td>15 minutes · 7 days maximum</td></tr>
+    <tr><td>SS-08</td><td>Administrators see all active sessions (person, application, device, IP address, times) and can end any session (lost device, leaver).</td><td>—</td></tr>
+    <tr><td>SS-09</td><td>Sessions ended by any route (sign out, idle, other device, admin, security) take effect on every connected application, normally within a minute.</td><td>Portal check every 60 s</td></tr>
+    <tr><td>SS-10</td><td>Passwords: at least the organisation's minimum length, with upper and lower case letters and a digit. Passwords are stored only as salted hashes.</td><td>Minimum 12 characters</td></tr>
+    <tr><td>SS-11</td><td>The web portals keep sign-in credentials on the server, never in the browser. The browser holds only a protected cookie that scripts cannot read, and sign-out cannot be triggered by another website.</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">5</span>Asset management business rules</h1>
+
+<h2>5.1 Assets</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-01</td><td>Every asset has a unique asset tag within the organisation, a name, a model (manufacturer and category), a status and a location.</td></tr>
+    <tr><td>AM-02</td><td>Cost cannot be negative. Book value is calculated straight-line over the category's depreciation period; it reaches zero at the end of that period.</td></tr>
+    <tr><td>AM-03</td><td>Status types decide what can happen: only <b>Deployable</b> assets can be issued or requested; Pending, Undeployable (e.g. Broken, Out for Repair) and Archived (Retired) cannot.</td></tr>
+    <tr><td>AM-04</td><td>An Asset Manager sees and changes only assets of their locations, and cannot move an asset to a location outside them (both the current and the new record are checked).</td></tr>
+    <tr><td>AM-05</td><td>Every employee can see the assets issued to them (My Assets), and nothing else unless their role allows it.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.2 Issue (check-out) and return (check-in)</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-10</td><td>An asset can be issued only to an <b>active employee</b> taken from the UMS directory, and only if it is <b>not already issued</b> and its status is <b>Deployable</b>.</td></tr>
+    <tr><td>AM-11</td><td><span class="pill">Restrict</span> Assets can be checked out only during <b>store operating hours</b>, 08:00–23:00.</td></tr>
+    <tr><td>AM-12</td><td><span class="pill red">Deny</span> Assets costing more than <b>₹1,50,000</b> cannot be issued to <b>contract, intern or vendor</b> staff.</td></tr>
+    <tr><td>AM-13</td><td>The expected return date, if given, cannot be in the past. Assets past their return date appear as <b>overdue</b> on the dashboard, in reports and in the daily digest.</td></tr>
+    <tr><td>AM-14</td><td>A return (check-in) is possible only for an issued asset; the asset may be given a new status at return (e.g. Out for Repair).</td></tr>
+    <tr><td>AM-15</td><td>The employee is e-mailed on issue and on return.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.3 Requests and approvals</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-20</td><td>Employees can request only assets marked <b>Requestable</b>, Deployable and not issued, and must give a reason.</td></tr>
+    <tr><td>AM-21</td><td>A person can have only one pending request for the same asset.</td></tr>
+    <tr><td>AM-22</td><td><span class="pill red">Deny</span> <b>No self-approval</b>: a request cannot be approved by the person who raised it.</td></tr>
+    <tr><td>AM-23</td><td><span class="pill">Restrict</span> Approving requests requires <b>MFA</b> to be enabled for the approver.</td></tr>
+    <tr><td>AM-24</td><td>Approving also requires permission to issue that asset to that person, so AM-10 to AM-12 apply. Approval issues the asset immediately, and <b>other pending requests for the same asset are rejected automatically</b> ("Asset issued to …").</td></tr>
+    <tr><td>AM-25</td><td>A rejection must state a reason. Requests can be decided or cancelled only while Pending.</td></tr>
+    <tr><td>AM-26</td><td><span class="pill">Restrict</span> A request can be seen or cancelled only by the requester, asset staff or auditors.</td></tr>
+    <tr><td>AM-27</td><td>The asset desk is e-mailed for every new request (requester in copy); the requester is e-mailed the decision.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.4 Software licences</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-30</td><td>A licence has at least one seat. Seats cannot be reduced below the number in use.</td></tr>
+    <tr><td>AM-31</td><td>A seat is given to a person and/or installed on an asset; a person can hold only one seat of the same licence.</td></tr>
+    <tr><td>AM-32</td><td>No seat can be given when all seats are used or the licence has <b>expired</b>. Licences expiring within 90 days are flagged "renew soon"; those within 30 days appear in the daily digest.</td></tr>
+    <tr><td>AM-33</td><td>Product keys are shown only to people allowed to edit the licence.</td></tr>
+    <tr><td>AM-34</td><td>A licence can be deleted only when all seats are returned.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.5 Accessories, consumables and components</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-40</td><td><b>Accessories</b> are lent to a person and returned; one of each item per person.</td></tr>
+    <tr><td>AM-41</td><td><b>Consumables</b> are issued and used up; the quantity issued cannot exceed stock; they cannot be returned.</td></tr>
+    <tr><td>AM-42</td><td><b>Components</b> are installed into an asset and return to stock when removed.</td></tr>
+    <tr><td>AM-43</td><td>Quantities cannot be negative and cannot be reduced below the units currently out. An item's kind cannot change.</td></tr>
+    <tr><td>AM-44</td><td>When available stock is at or below the <b>re-order level</b> the item is flagged and listed in the daily digest.</td></tr>
+    <tr><td>AM-45</td><td>An item can be deleted only when all units are back in stock.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.6 Maintenance and physical audits</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-50</td><td>Maintenance needs a title. The cost cannot be negative, and the completion date cannot be before the start date. A record cannot be moved to another asset.</td></tr>
+    <tr><td>AM-51</td><td>Location limits apply to maintenance as to the asset itself.</td></tr>
+    <tr><td>AM-52</td><td>An audit confirms the asset was seen and sets the next audit date, which must be in the future. Audits due within 30 days are on the dashboard, in reports and in the digest.</td></tr>
+  </tbody>
+</table>
+
+<h2>5.7 Disposal (delete)</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-60</td><td>An asset can be deleted only when it is checked in.</td></tr>
+    <tr><td>AM-61</td><td><span class="pill red">Deny</span> Asset Managers cannot delete assets that cost more than <b>₹1,00,000</b>; an Asset Administrator must.</td></tr>
+    <tr><td>AM-62</td><td><span class="pill red">Deny</span> Contract, intern and vendor staff cannot delete anything (PO-09).</td></tr>
+  </tbody>
+</table>
+
+<h2>5.8 Master data</h2>
+<table class="br">
+  <thead><tr><th>ID</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>AM-70</td><td>Only Asset Administrators change master data (models, categories, manufacturers, suppliers, locations, departments, status labels); Asset Managers view it.</td></tr>
+    <tr><td>AM-71</td><td>Names are required; category names are unique. Location codes are required, unique, and must match UMS user locations (e.g. S045, DC-NR1, HO-GGN) so that location limits work. A model needs a category and a manufacturer.</td></tr>
+    <tr><td>AM-72</td><td>An entry in use by any record cannot be deleted.</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">6</span>Data validations</h1>
+<p>Validations are enforced on the server. A screen may check too, but the server always does. The message shown to the user is in the right-hand column.</p>
+
+<h2>6.1 User Management</h2>
+<table>
+  <thead><tr><th>Record</th><th>Field / rule</th><th>Message or effect</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="4">User</td><td>Full name required, 3–200 characters</td><td>Field error</td></tr>
+    <tr><td>E-mail required and valid; employee code required (max 50)</td><td>Field error</td></tr>
+    <tr><td>Role validity: end date not before start date</td><td>"Role validity end date is before its start date."</td></tr>
+    <tr><td>Password ≥ organisation minimum (and ≥ 8), upper case, lower case, digit</td><td>"Password needs an upper-case letter." etc.</td></tr>
+    <tr><td>Role</td><td>Code required (max 50), name required (max 200)</td><td>Field error</td></tr>
+    <tr><td>Application</td><td>Code (max 30) and name required; modules and resources need codes; each resource needs at least one action</td><td>"Each resource needs at least one action."</td></tr>
+    <tr><td>Policy</td><td>Name required; priority 0–10,000; every condition needs an attribute</td><td>Field error</td></tr>
+    <tr><td>Schedule</td><td>Code and name required; at least one time window</td><td>"A schedule needs at least one time window."</td></tr>
+    <tr><td>Security settings</td><td>Password minimum 8–128; max failed logins 1–50; token lifetime 1–1440 min; idle timeout, password expiry, lockout and refresh days &gt; 0</td><td>Field error</td></tr>
+    <tr><td>Access check (batch)</td><td>At most 2000 checks per call; app, module and resource required</td><td>"At most 2000 checks per call."</td></tr>
+  </tbody>
+</table>
+
+<h2>6.2 Asset Management</h2>
+<table>
+  <thead><tr><th>Record</th><th>Rule</th><th>Message</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="4">Asset</td><td>Tag and name required</td><td>"Asset tag and name are required."</td></tr>
+    <tr><td>Tag unique</td><td>"Asset tag VMM-LT-1007 is already used."</td></tr>
+    <tr><td>Cost ≥ 0; model, status and location must exist</td><td>"Cost cannot be negative." · "Choose a valid model, status and location."</td></tr>
+    <tr><td>Delete only when checked in</td><td>"Check the asset in before deleting it."</td></tr>
+    <tr><td rowspan="5">Check-out / in</td><td>Employee chosen and active</td><td>"Choose an employee." · "… is not an active employee."</td></tr>
+    <tr><td>Not already issued</td><td>"VMM-LT-1007 is already checked out to …"</td></tr>
+    <tr><td>Status deployable</td><td>"… is 'Broken'; only deployable assets can be checked out."</td></tr>
+    <tr><td>Return date not in the past</td><td>"The return date cannot be in the past."</td></tr>
+    <tr><td>Check-in only if issued</td><td>"… is not checked out."</td></tr>
+    <tr><td>Audit</td><td>Next audit in the future</td><td>"The next audit must be in the future."</td></tr>
+    <tr><td rowspan="5">Request</td><td>Reason required</td><td>"Please give a reason."</td></tr>
+    <tr><td>Asset offered and free</td><td>"… is not offered for requests." · "… is already issued."</td></tr>
+    <tr><td>One pending per person and asset</td><td>"You already have a pending request for this asset."</td></tr>
+    <tr><td>Rejection needs a reason</td><td>"Give a reason for the rejection."</td></tr>
+    <tr><td>Decide or cancel only when pending</td><td>"The request is already approved."</td></tr>
+    <tr><td rowspan="5">Licence</td><td>Name required; seats ≥ 1; cost ≥ 0</td><td>"A licence needs at least one seat."</td></tr>
+    <tr><td>Seats not below seats in use</td><td>"3 seats are in use; check some in before reducing seats to 2."</td></tr>
+    <tr><td>Seat to a person or an asset</td><td>"Choose a person or an asset."</td></tr>
+    <tr><td>Seats available, not expired, one per person</td><td>"All 25 seats of … are in use." · "… expired on 31 Mar 2026." · "… already has a seat."</td></tr>
+    <tr><td>Delete only with no seats out</td><td>"Check in all seats before deleting the licence."</td></tr>
+    <tr><td rowspan="5">Stock item</td><td>Name and location required; quantities and cost ≥ 0</td><td>"Quantities cannot be negative." · "Choose a location."</td></tr>
+    <tr><td>Quantity not below units out</td><td>"4 units are out; quantity cannot be less than that."</td></tr>
+    <tr><td>Issue: quantity ≥ 1 and ≤ available; person (or asset for components)</td><td>"Only 3 of … available." · "Choose the asset the component goes into."</td></tr>
+    <tr><td>Accessory one per person; consumables not returnable</td><td>"… already has one." · "Consumables are used up and cannot be checked in."</td></tr>
+    <tr><td>Delete only with all units in; kind cannot change</td><td>"Check in all units before deleting." · "The kind of an item cannot change."</td></tr>
+    <tr><td>Maintenance</td><td>Title; cost ≥ 0; completion ≥ start; stays on its asset</td><td>"Completion date cannot be before the start date."</td></tr>
+    <tr><td>Master data</td><td>Name required; category name and location code unique; model needs category and manufacturer; in-use entries not deletable</td><td>"Location code S045 already exists." · "Laptops is used by 20 record(s)."</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">7</span>Notifications and management reporting</h1>
+<h2>7.1 E-mails</h2>
+<table>
+  <thead><tr><th>Event</th><th>Recipient</th><th>Control purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Asset issued</td><td>Employee</td><td>Acknowledgement of custody</td></tr>
+    <tr><td>Asset returned</td><td>Employee</td><td>Proof of return</td></tr>
+    <tr><td>Asset request submitted</td><td>IT asset desk (requester in copy)</td><td>Timely handling</td></tr>
+    <tr><td>Request approved / rejected</td><td>Requester</td><td>Transparency of decisions</td></tr>
+    <tr><td>Daily digest, 08:30 IST</td><td>IT asset desk</td><td>Exceptions: overdue returns, audits due (30 days), licences expiring (30 days), low stock. Not sent when there is nothing to report.</td></tr>
+  </tbody>
+</table>
+<p>E-mail is sent only to approved company domains, so a typo cannot send company data outside. Sending happens in the background; a mail problem never blocks the business transaction.</p>
+
+<h2>7.2 Reports available to management</h2>
+<ul>
+  <li><b>AMS Dashboard</b>:
+    <ul>
+      <li>asset count and purchase value, utilisation (issued vs ready);</li>
+      <li>licence seats used, low stock, pending requests, open repairs;</li>
+      <li>breakdowns by category, location and status;</li>
+      <li>audits due, overdue returns, warranties ending within 90 days.</li>
+    </ul></li>
+  <li><b>AMS Reports</b>:
+    <ul>
+      <li>purchase value, book value and depreciation by category, location and status;</li>
+      <li>a detailed depreciation table, exportable to CSV.</li>
+    </ul></li>
+  <li><b>Activity Log</b>: every asset transaction, exportable.</li>
+  <li><b>UMS Dashboard</b>:
+    <ul>
+      <li>users by status and department;</li>
+      <li>access decisions per application;</li>
+      <li>items needing attention;</li>
+      <li>recent changes.</li>
+    </ul></li>
+  <li>Every figure respects the viewer's access. A location manager's report covers only their locations.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">8</span>Audit trail and traceability</h1>
+<table>
+  <thead><tr><th>Record</th><th>What is captured</th><th>Where to see it</th></tr></thead>
+  <tbody>
+    <tr><td>Changes in UMS</td><td>Who, when, what (user, role, policy, settings, session revoke), old and new values, IP address</td><td>UMS → Audit Trail</td></tr>
+    <tr><td>Access decisions</td><td>Every allowed or refused action in an application, with the reason, user, route and IP; every sign-in</td><td>UMS → User Action Trail</td></tr>
+    <tr><td>Sessions</td><td>Each sign-in: application, device, IP, start, last activity, end and reason</td><td>UMS → Active Sessions</td></tr>
+    <tr><td>Asset transactions</td><td>Created, edited, checked out/in, audited, requested, approved, rejected, maintained, deleted: who, when, item, person, note, location</td><td>AMS → Activity Log and each asset's history</td></tr>
+    <tr><td>System errors</td><td>Unexpected errors with context, for follow-up</td><td>UMS → Exception Logs; AMS log files</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">9</span>Control status, gaps and recommendations</h1>
+<p>Status of each control area as delivered:</p>
+<table>
+  <thead><tr><th>Control</th><th>Status</th><th>Comment / recommendation</th></tr></thead>
+  <tbody>
+    <tr><td>Role- and policy-based access (chapters 3, 5)</td><td><span class="pill green">Enforced</span></td><td>Review roles and scopes every quarter; use the Access Simulator to verify changes.</td></tr>
+    <tr><td>Single-device login, idle timeout, lockout, token renewal, admin session end</td><td><span class="pill green">Enforced</span></td><td>Tested end to end.</td></tr>
+    <tr><td>Password complexity and minimum length</td><td><span class="pill green">Enforced</span></td><td>Applied when a password is set.</td></tr>
+    <tr><td>Password expiry (90 days)</td><td><span class="pill amber">Configured, not enforced</span></td><td>The setting is stored but sign-in does not yet force a change. Implement before go-live, or decide to rely on SSO.</td></tr>
+    <tr><td>Multi-factor authentication</td><td><span class="pill amber">Partly</span></td><td>Policies check whether MFA is enabled on the account (e.g. approvers), but sign-in does not yet ask for a second factor. Integrate an MFA / SSO provider (e.g. Microsoft Entra ID) so that the flag reflects a real second factor.</td></tr>
+    <tr><td>Allowed IP ranges for admins</td><td><span class="pill amber">Configured, not enforced</span></td><td>Network is used in policies (Office LAN vs Internet); the tenant IP allow-list is not yet applied at sign-in.</td></tr>
+    <tr><td>Device check (managed / unmanaged)</td><td><span class="pill amber">Configuration</span></td><td>AMS reports the device type from configuration. Connect it to device management (Intune) for a real per-device signal.</td></tr>
+    <tr><td>Development conveniences</td><td><span class="pill red">Must be off in production</span></td><td><code>Security:RequireAuthentication</code> must be true; automatic database set-up and demo data off; demo passwords and development keys replaced by secrets.</td></tr>
+    <tr><td>Data protection of e-mails</td><td><span class="pill green">Enforced</span></td><td>Configure the allowed e-mail domains in production.</td></tr>
+  </tbody>
+</table>
+
+<div class="warn"><b>Recommended before go-live</b>
+<ol style="margin:1mm 0 0">
+  <li>Enforce password expiry and connect real MFA (or company SSO).</li>
+  <li>Production settings review (chapter 9 last rows).</li>
+  <li>Role and scope review with process owners.</li>
+  <li>Approve the policy limits (₹1,00,000 disposal; ₹1,50,000 contract staff; operating hours) with Finance and Audit.</li>
+</ol></div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">10</span>How rules are changed</h1>
+<ol class="steps">
+  <li><b>Request.</b> The process owner asks for a change (e.g. "raise the contract-staff limit to ₹2,00,000").</li>
+  <li><b>Approve.</b> The change is approved according to the company's change policy (Information Security and Audit for security-relevant rules).</li>
+  <li><b>Test.</b> The UMS Administrator checks the effect with the Access Simulator, which explains the decision step by step.</li>
+  <li><b>Apply.</b> The administrator edits the policy, role or setting in the UMS Admin Portal. It applies immediately to all applications; no software release is needed.</li>
+  <li><b>Evidence.</b> The Audit Trail records the change with old and new values, who made it and when.</li>
+</ol>
+<div class="tip"><b>Rules that need a software change</b>Data rules that protect the integrity of the register (unique tags, no double issue, seat and stock limits, no deletion while in use) are built into the database and apply to every user. Changing them needs a development change and testing.</div>
+
+</body>
+</html>

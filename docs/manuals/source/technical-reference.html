@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VMM UMS &amp; AMS – Technical Logic Reference</title>
+<link rel="stylesheet" href="docs.css">
+<style>
+  table.logic td:first-child { white-space: nowrap; font-weight: 700; color: var(--blue); }
+  table.logic td:nth-child(3) { font-family: "JetBrains Mono", monospace; font-size: 7.6pt; color: #3c4a63; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="logo">V</div>
+  <div class="band">Document 2 of 3<br>Companion documents: User Manual · Business Rules &amp; Validations</div>
+  <div class="kicker">Vishal Mega Mart · IT Applications</div>
+  <h1>Technical Logic Reference</h1>
+  <div class="sub">Every piece of logic in the User Management System and the Asset Management System: what it does, how it works, and where it is implemented.</div>
+  <div class="meta">
+    <div><b>Applies to</b>UMS API · UMS Admin Portal · AMS.Api · AMS.Portal · BuildingBlocks</div>
+    <div><b>Audience</b>Developers, architects, support engineers, security reviewers</div>
+    <div><b>Version</b>1.0 · October 2026 · .NET 9, SQL Server 2019+</div>
+  </div>
+</section>
+
+<h1 class="chapter" style="page-break-before:avoid">Contents</h1>
+<div class="toc">
+  <div><span>1</span>System overview</div>
+  <div class="sub">1.1 Solution layout · 1.2 Runtime components · 1.3 Design principles</div>
+  <div><span>2</span>Logic catalogue (index of all logics)</div>
+  <div><span>3</span>Identity, sign-in and sessions (UMS)</div>
+  <div class="sub">3.1 Sign-in · 3.2 Tokens · 3.3 Refresh and reuse detection · 3.4 Session validation · 3.5 Status, keep-alive, logout, revoke · 3.6 Lockout</div>
+  <div><span>4</span>Authorisation engine (UMS)</div>
+  <div class="sub">4.1 Decision layers · 4.2 Permission keys · 4.3 Role validity and scope · 4.4 Policies · 4.5 Conditions · 4.6 Schedules · 4.7 Endpoints · 4.8 UMS self-protection</div>
+  <div><span>5</span>UMS application pipeline</div>
+  <div><span>6</span>AMS web portal: authentication and session handling</div>
+  <div><span>7</span>AMS API: request handling</div>
+  <div><span>8</span>AMS use cases (business logic)</div>
+  <div><span>9</span>AMS data layer: Dapper and stored procedures</div>
+  <div><span>10</span>Notifications (e-mail)</div>
+  <div><span>11</span>In-house building blocks: VMM.Mediator, VMM.Mapper</div>
+  <div><span>12</span>Configuration reference</div>
+  <div><span>13</span>Tests</div>
+</div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">1</span>System overview</h1>
+
+<h2>1.1 Solution layout (<code>UMS_Sol.sln</code>)</h2>
+<table>
+  <thead><tr><th>Project</th><th>Layer</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><code>DomainLayer</code></td><td>Domain</td><td>Entities (User, Tenant, Application, Role, Policy, Schedule, UserSession, LoginAttempt); value objects; the decision engine <code>AccessDecisionService</code>, <code>ConditionEvaluator</code>, <code>ScheduleEvaluator</code>.</td></tr>
+    <tr><td><code>ApplicationLayer</code></td><td>Application</td><td>Commands and queries per feature (<code>Features/AccessControl/*</code>), DTOs, FluentValidation validators, pipeline behaviours, ports (repository and service interfaces), mappings.</td></tr>
+    <tr><td><code>Infrastructure</code></td><td>Infrastructure</td><td>In-memory and SQL Server (Dapper) repositories, demo seed, password hashing, JWT issuing, session validator, audit service.</td></tr>
+    <tr><td><code>WebApi</code></td><td>Presentation</td><td>UMS REST API <code>/api/v1</code>, JWT bearer authentication, <code>RequirePermission</code> filter, exception logging middleware.</td></tr>
+    <tr><td><code>UMS.AdminPortal</code></td><td>Presentation</td><td>Blazor Server + MudBlazor admin console; calls the UMS API over HTTP.</td></tr>
+    <tr><td><code>AMS.Domain</code></td><td>Domain</td><td>AMS contracts (<code>BaseResponse</code>), read models, enums, exceptions, permission catalogue.</td></tr>
+    <tr><td><code>AMS.Application</code></td><td>Application</td><td>AMS use cases; ports for repositories, guard, API calls and e-mail; templates and recipient resolvers.</td></tr>
+    <tr><td><code>AMS.Infrastructure</code></td><td>Infrastructure</td><td>Dapper repositories, UMS client and guard, SMTP and notification queue, <code>ApiCallService</code>.</td></tr>
+    <tr><td><code>AMS.Api</code></td><td>Presentation</td><td>AMS REST API <code>POST api/v1/{action}</code>; the only component touching the AMS database.</td></tr>
+    <tr><td><code>AMS.Portal</code></td><td>Presentation</td><td>Blazor Server portal; talks only to AMS.Api (data) and UMS (sign-in).</td></tr>
+    <tr><td><code>VMM.Mediator</code>, <code>VMM.Mapper</code></td><td>Building blocks</td><td>In-house mediator and object mapper (replace MediatR and AutoMapper).</td></tr>
+    <tr><td><code>UMS.Tests</code>, <code>AMS.Tests</code>, <code>BuildingBlocks.Tests</code></td><td>Tests</td><td>xUnit: 45 + 29 + 14 tests.</td></tr>
+  </tbody>
+</table>
+
+<h2>1.2 Runtime components</h2>
+<div class="flow">
+  <div><b>Browser</b>HTTP-only cookie; no tokens in the browser</div>
+  <div><b>AMS.Portal :5300</b>Blazor Server; holds UMS tokens server-side per session</div>
+  <div><b>AMS.Api :5310</b>validates UMS JWT; runs use cases</div>
+  <div><b>UMS API :5125</b>sign-in, sessions, decisions, directory</div>
+  <div><b>SQL Server</b>UMS DB · VMM_AMS DB (separate)</div>
+</div>
+<pre>Browser ──cookie──► AMS.Portal ──IAPICall (POST api/v1/X, Bearer UMS token)──► AMS.Api ──► use case ──► IAccessGuard ──► UMS /api/v1/me/authorize
+                        │                                                                    └──► repository ──► Dapper ──► SQL Server (stored procedures)
+                        └──► UMS /api/v1/auth/login | refresh | session | logout
+Browser ──► UMS.AdminPortal ──► UMS API ──► VMM.Mediator handlers ──► repositories ──► SQL Server / in-memory</pre>
+
+<h2>1.3 Design principles</h2>
+<ul>
+  <li><b>Single decision point.</b> Every access decision is made by <code>AccessDecisionService</code> in UMS. AMS contains no role checks; it describes the action and the record to UMS and acts only on an Allow.</li>
+  <li><b>Fail closed.</b> An unreachable UMS, a missing attribute or an ended session never results in access.</li>
+  <li><b>Clean architecture / SOLID.</b> Dependencies point inwards (Presentation → Infrastructure → Application → Domain). Use cases depend on interfaces only. Each class has one reason to change (for example sender, template, resolver and recipient policy are separate e-mail classes).</li>
+  <li><b>Tenant isolation.</b> The tenant always comes from the signed-in user's token, never from a request body.</li>
+  <li><b>Explainability.</b> Every decision carries the step that decided it and a human-readable reason, shown to users and written to the user action trail.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">2</span>Logic catalogue</h1>
+<p>Each logic has an identifier used throughout this document. "Where" is the main implementation.</p>
+<table class="logic">
+  <thead><tr><th>ID</th><th>Logic</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>L-01</td><td>Sign-in with lockout, account and application checks</td><td>SessionFeatures.cs · LoginCommandHandler</td></tr>
+    <tr><td>L-02</td><td>Single-device login (replace other sessions)</td><td>LoginCommandHandler</td></tr>
+    <tr><td>L-03</td><td>Session-bound access token issuing</td><td>IdentityService · JwtTokenService</td></tr>
+    <tr><td>L-04</td><td>Refresh-token rotation and reuse detection</td><td>RefreshSessionCommandHandler · RefreshTokens</td></tr>
+    <tr><td>L-05</td><td>Per-request session validation (10 s cache) and end recording</td><td>Infrastructure/Services/SessionValidator.cs · WebApi/Program.cs</td></tr>
+    <tr><td>L-06</td><td>Session status, keep-alive (touch), logout, admin revoke</td><td>GetSessionStatusQuery · LogoutCommand · RevokeSessionCommand</td></tr>
+    <tr><td>L-07</td><td>Login attempt counting and lockout</td><td>DomainLayer/Entities/UserSession.cs · LoginAttempt</td></tr>
+    <tr><td>L-08</td><td>Seven-layer access decision</td><td>DomainLayer/Services/AccessDecisionService.cs</td></tr>
+    <tr><td>L-09</td><td>Permission key matching with wildcards</td><td>PermissionKey · Role.Grants</td></tr>
+    <tr><td>L-10</td><td>Role validity dates and scope matching</td><td>AccessDecisionService.ActiveAssignments · ScopeMismatch</td></tr>
+    <tr><td>L-11</td><td>Policy targeting, priority and effects (Restrict / Deny / Grant)</td><td>AccessDecisionService · PolicyApplies</td></tr>
+    <tr><td>L-12</td><td>Condition evaluation and attribute context</td><td>ConditionEvaluator · BuildContext</td></tr>
+    <tr><td>L-13</td><td>Office hours, overnight windows and holidays</td><td>ScheduleEvaluator</td></tr>
+    <tr><td>L-14</td><td>Batch authorisation for applications (max 2000)</td><td>CheckMyAccessQuery · MeController</td></tr>
+    <tr><td>L-15</td><td>UMS protects its own API (RequirePermission)</td><td>WebApi/Filters/RequirePermissionAttribute.cs</td></tr>
+    <tr><td>L-16</td><td>Tenant resolution (X-Tenant-Id, super-admin cross-tenant)</td><td>CurrentTenantService · controllers</td></tr>
+    <tr><td>L-17</td><td>Request pipeline: validation behaviour, Result → HTTP</td><td>ValidationBehavior · AccessControlControllerBase</td></tr>
+    <tr><td>L-18</td><td>Audit trail, user action trail, exception log</td><td>AuditService · ExceptionLoggingMiddleware</td></tr>
+    <tr><td>L-19</td><td>Portal sign-in hand-off (ticket → cookie)</td><td>AMS.Portal/Auth/AuthFlow.cs · LoginTicketStore</td></tr>
+    <tr><td>L-20</td><td>Server-side token store and serialised refresh</td><td>AMS.Portal/Auth/Sessions.cs · UmsTokenStore</td></tr>
+    <tr><td>L-21</td><td>Cookie validation per HTTP request</td><td>CookieValidator</td></tr>
+    <tr><td>L-22</td><td>Circuit revalidation and server idle backstop</td><td>AppRevalidatingAuthStateProvider</td></tr>
+    <tr><td>L-23</td><td>Browser idle monitor, warning and keep-alive</td><td>IdleTimeoutMonitor.razor · wwwroot/js/idle-timeout.js</td></tr>
+    <tr><td>L-24</td><td>Antiforgery-protected sign-out and session-end routing</td><td>AccountEndpoints · RedirectToLogin · Ui.SignOut</td></tr>
+    <tr><td>L-25</td><td>API call service (IAPICall)</td><td>AMS.Infrastructure/Api/ApiCallService.cs</td></tr>
+    <tr><td>L-26</td><td>AMS JWT validation and current actor</td><td>AMS.Api/Program.cs · HttpCurrentActor</td></tr>
+    <tr><td>L-27</td><td>Exception → response mapping</td><td>AMS.Api/Infrastructure/ApiPlumbing.cs</td></tr>
+    <tr><td>L-28</td><td>UMS guard (fail closed) and network detection</td><td>AMS.Infrastructure/Ums/UmsClient.cs · UmsAccessGuard</td></tr>
+    <tr><td>L-29</td><td>List filtering and per-row action matrix</td><td>GuardExtensions.FilterAsync / MatrixAsync</td></tr>
+    <tr><td>L-30</td><td>Capabilities (menu and buttons)</td><td>ReportUseCases.CapabilitiesAsync</td></tr>
+    <tr><td>L-31</td><td>Record attributes sent to UMS</td><td>AMS.Application/Common · ResourceAttrs</td></tr>
+    <tr><td>L-32</td><td>Asset life cycle: create/edit (double check), check-out/in, audit, delete</td><td>AssetUseCases</td></tr>
+    <tr><td>L-33</td><td>Asset request workflow</td><td>RequestUseCases</td></tr>
+    <tr><td>L-34</td><td>Licence seats</td><td>LicenseUseCases · PRO_AMS_LICENSE_*</td></tr>
+    <tr><td>L-35</td><td>Stock: accessories, consumables, components</td><td>StockUseCases · PRO_AMS_STOCK_*</td></tr>
+    <tr><td>L-36</td><td>Reports: depreciation, due lists, dashboard</td><td>ReportUseCases · Depreciation</td></tr>
+    <tr><td>L-37</td><td>CSV export with formula-injection protection</td><td>AMS.Application/Common · Csv</td></tr>
+    <tr><td>L-38</td><td>Stored procedure contract and error codes</td><td>DapperHelper · database/002_ams_procedures.sql</td></tr>
+    <tr><td>L-39</td><td>Database initialisation and demo seed</td><td>DatabaseInitializer · DemoDataSeeder</td></tr>
+    <tr><td>L-40</td><td>Notification queue, notifier, templates, recipients, policy</td><td>AMS.Infrastructure/Email · AMS.Application/Notifications</td></tr>
+    <tr><td>L-41</td><td>Daily digest scheduling</td><td>DailyDigestService · DailyDigestBuilder</td></tr>
+    <tr><td>L-42</td><td>People directory with cache</td><td>UmsPeopleDirectory</td></tr>
+    <tr><td>L-43</td><td>Mediator: dispatch, pipeline, events</td><td>BuildingBlocks/VMM.Mediator</td></tr>
+    <tr><td>L-44</td><td>Object mapper: conventions, validation</td><td>BuildingBlocks/VMM.Mapper</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">3</span>Identity, sign-in and sessions (UMS)</h1>
+
+<h2>3.1 Sign-in (L-01, L-02)</h2>
+<p><code>POST /api/v1/auth/login</code> with <code>email, password, appCode, clientIp, userAgent</code>. The handler runs these steps in order; the first failure ends the request.</p>
+<ol class="steps">
+  <li><b>Lockout check.</b> Load the <code>LoginAttempt</code> for the login name. If <code>LockedUntil</code> is in the future → <code>auth.locked</code> ("Try again after hh:mm").</li>
+  <li><b>Password check.</b> Find the user by e-mail and verify the PBKDF2 hash. On failure, count the failure (L-07). If the count reaches <code>MaxFailedLogins</code> the login locks for <code>LockoutMinutes</code> → <code>auth.locked</code>, otherwise <code>auth.invalid</code>. Unknown e-mail and wrong password give the same answer (no account enumeration).</li>
+  <li><b>Account check.</b> The tenant must be active and the user usable today (status Active, account expiry not passed) → otherwise <code>auth.disabled</code>.</li>
+  <li><b>Application check.</b> <code>appCode</code> (default <code>UMS</code>) must be registered and enabled for the user's tenant → otherwise <code>auth.app</code>.</li>
+  <li><b>Reset</b> the failure counter.</li>
+  <li><b>Single-device login.</b> If <code>SingleDeviceLogin</code> is on, every open session of the user in the same application is ended with reason <code>Replaced</code>, and its validator cache entry is cleared.</li>
+  <li><b>Create the session</b> (<code>UserSession</code>): id, tenant, user, emp code, app, IP, user agent (max 300 chars), <code>ExpiresAt = now + RefreshTokenDays</code>, <code>LastSeenAt = now</code>, refresh-token hash.</li>
+  <li><b>Record</b> the last login and a user action log entry (<code>{APP}.SESSION.SIGN_IN</code>, "session on another device was ended" when L-02 applied).</li>
+  <li><b>Issue</b> tokens (L-03) and return <code>LoginResultDto</code>: access token and expiry, refresh token, session expiry, session id, user id, tenant id, name, e-mail, emp code, app code, idle timeout minutes, <code>EndedOtherSessions</code>.</li>
+</ol>
+
+<h2>3.2 Access tokens (L-03)</h2>
+<p>HS256 JWT, lifetime <code>JwtExpiryMinutes</code> (default 15), issuer and audience from <code>Jwt:*</code>; the key must be at least 32 bytes (checked at start-up). Claims:</p>
+<table>
+  <thead><tr><th>Claim</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>sub</code> / name identifier</td><td>User id</td></tr>
+    <tr><td><code>sid</code></td><td>Sign-in session id. Every request is checked against this session (L-05).</td></tr>
+    <tr><td><code>app</code></td><td>Application the session belongs to (AMS.Api accepts only <code>AMS</code>).</td></tr>
+    <tr><td><code>tenant_id</code>, <code>emp_code</code>, name, e-mail</td><td>Identity of the caller, used for tenant isolation and audit.</td></tr>
+    <tr><td><code>jti</code></td><td>Unique token id.</td></tr>
+  </tbody>
+</table>
+
+<h2>3.3 Refresh and reuse detection (L-04)</h2>
+<p>A refresh token has the form <code>{sessionId:N}.{random}</code>; only its SHA-256 hash is stored. <code>POST /api/v1/auth/refresh</code>:</p>
+<ol class="steps">
+  <li>Parse the session id; unknown session → <code>session.expired</code>.</li>
+  <li>Compute the session status (ended, expired, idle). If not active → end it (if not already) and return <code>session.&lt;reason&gt;</code>.</li>
+  <li>If the presented token does not match the current hash, it is an <b>old token</b> (already rotated): someone may hold a copy, so the whole session ends with <code>TokenReuse</code>.</li>
+  <li>The user and tenant must still be usable → otherwise <code>AccountDisabled</code>.</li>
+  <li>Rotate: new refresh token, store its hash, clear the validator cache, issue a new access token.</li>
+</ol>
+
+<h2>3.4 Session validation on every request (L-05)</h2>
+<p>JWT bearer authentication in the UMS API has an <code>OnTokenValidated</code> hook:</p>
+<ul>
+  <li>No <code>sid</code> claim → fail ("token is not bound to a sign-in session").</li>
+  <li><code>ISessionValidator.CheckAsync(sid)</code> loads the session and the tenant's idle timeout. The result is cached for <b>10 seconds</b> per session, and the cache entry is cleared whenever UMS ends or rotates the session.</li>
+  <li>Status order: ended → its reason; <code>now ≥ ExpiresAt</code> → <code>Expired</code>; <code>now − LastSeenAt &gt; idle</code> → <code>Idle</code>; otherwise active.</li>
+  <li>If the session ran out but is not yet recorded as ended, the validator <b>records the end</b> (reason and time). The admin's Active Sessions page and the audit then show it.</li>
+  <li>Not active → authentication fails; <code>OnChallenge</code> adds the header <code>X-Session-End: &lt;Reason&gt;</code>, which CORS exposes to browsers.</li>
+</ul>
+
+<h2>3.5 Status, keep-alive, logout and revoke (L-06)</h2>
+<table>
+  <thead><tr><th>Endpoint</th><th>Logic</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /auth/session?touch=</code></td><td>Returns active / reason / expiry / last seen / idle minutes. With <code>touch=true</code> and an active session, <code>LastSeenAt = now</code> (user activity). A run-out session is ended and recorded.</td></tr>
+    <tr><td><code>POST /auth/logout</code></td><td>Ends the caller's own session with <code>SignedOut</code> or <code>Idle</code> (the only reasons a client may give).</td></tr>
+    <tr><td><code>GET /sessions?activeOnly=</code></td><td>Sessions of the tenant (permission <code>UMS.SETUP.SESSION.View</code>).</td></tr>
+    <tr><td><code>DELETE /sessions/{id}</code></td><td>Ends a session with <code>RevokedByAdmin</code>; audited as a Revoke (permission <code>UMS.SETUP.SESSION.Delete</code>).</td></tr>
+  </tbody>
+</table>
+
+<h2>3.6 Lockout (L-07)</h2>
+<p><code>LoginAttempt(Login, FailedCount, LockedUntil)</code>. <code>RegisterFailure(now, max, lockout)</code> increments the count; when it reaches <code>max</code>, <code>LockedUntil = now + lockout</code> and the count resets. A successful sign-in clears it. Attempts are keyed by login name, so locking works for unknown names too.</p>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">4</span>Authorisation engine (UMS)</h1>
+
+<h2>4.1 Decision layers (L-08)</h2>
+<p><code>AccessDecisionService.Decide(request, context)</code> answers: <i>can user U perform action A on record R in module M of application P, now, from this network, device and channel?</i> Layers run in order. The first failing layer denies (deny-overrides), and every layer adds an explanation step.</p>
+<table>
+  <thead><tr><th>#</th><th>Layer</th><th>Passes when</th><th>Example deny reason</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Tenant</td><td>Tenant exists and is active</td><td>tenant … is inactive</td></tr>
+    <tr><td>2</td><td>Identity</td><td>User active and not past account expiry</td><td>account expired on 2027-03-31</td></tr>
+    <tr><td>3</td><td>Application</td><td>App registered, active, enabled for the tenant, and some active role grants <code>APP.*.*.*</code> or more specific</td><td>no role grants access to Finance ERP</td></tr>
+    <tr><td>4</td><td>Module</td><td>A role grants something in the module</td><td>no permission on module Reports</td></tr>
+    <tr><td>5</td><td>Resource · Action</td><td>Resource exists, action valid for it, and a role grants the exact key</td><td>missing POS.BILLING.INVOICE.REFUND</td></tr>
+    <tr><td>6</td><td>Scope</td><td>At least one granting role assignment is in scope for the record</td><td>location: role scoped to 'HO-GGN', resource is 'S045'</td></tr>
+    <tr><td>7</td><td>Policies</td><td>Every applicable Restrict holds and no applicable Deny matches</td><td>Deny 'Supervisor refund limit ₹10,000' — resource.amount (15000) &gt; '10000'</td></tr>
+  </tbody>
+</table>
+<p>In layers 3–6 an applicable <b>Grant</b> policy whose conditions hold can stand in for a missing role permission (e.g. "employees see assets issued to them"). Restrict and Deny policies still apply afterwards.</p>
+
+<h2>4.2 Permission keys (L-09)</h2>
+<p><code>APP.MODULE.RESOURCE.ACTION</code>, upper-case. Each segment may be <code>*</code>. A role grants a key if any of its patterns matches segment by segment: <code>AMS.*.*.*</code> grants every AMS action, <code>*.*.*.VIEW</code> every view. Actions: View, Create, Edit, Delete, Approve, Export, Print, Void, Refund, Checkout, Checkin, Audit, Request. A resource declares which actions are valid for it; an action the resource does not declare is denied at layer 5.</p>
+
+<h2>4.3 Role validity and scope (L-10)</h2>
+<ul>
+  <li><b>Validity.</b> An assignment counts only if the role is active and <code>ValidFrom ≤ today ≤ ValidTo</code> (open-ended when empty). Example: Rahul's temporary Procurement Head role is ignored after 10 Oct 2026.</li>
+  <li><b>Scope.</b> An assignment may carry a scope, e.g. <code>{"location": "HO-GGN"}</code> or <code>{"store": "S045,S046"}</code> (comma = any of). For every scope key that the <i>record</i> carries, the record's value must be one of the listed values (case-insensitive). Keys the record does not carry do not restrict, so licences (no location) are visible to a location-scoped manager.</li>
+  <li>If any granting assignment is in scope, layer 6 passes. If only scoped assignments grant the key and none is in scope, a Grant policy can still allow; otherwise deny with the mismatch.</li>
+</ul>
+
+<h2>4.4 Policies (L-11)</h2>
+<ul>
+  <li>A policy <b>targets</b> app / module / resource / actions (each may be <code>*</code>), optionally only users holding certain roles.</li>
+  <li>Applicable policies are evaluated in <b>Priority</b> order (lower number first).</li>
+  <li><b>Restrict</b>: conditions must be true, else deny. <b>Deny</b>: if conditions are true, deny. <b>Grant</b>: if conditions are true, allow without a role permission.</li>
+  <li>Conditions combine with <b>All</b> (AND) or <b>Any</b> (OR).</li>
+</ul>
+
+<h2>4.5 Conditions and attribute context (L-12)</h2>
+<p>The engine builds a context dictionary for each request:</p>
+<table>
+  <thead><tr><th>Prefix</th><th>Attributes</th></tr></thead>
+  <tbody>
+    <tr><td><code>user.*</code></td><td>id, empCode, department, designation, location, region, employmentType, mfaEnabled, roles (comma list) + custom user attributes (e.g. vendorCode)</td></tr>
+    <tr><td><code>resource.*</code></td><td>app, module, type + every attribute the application sends for the record (store, amount, cost, location, ownerEmpCode…)</td></tr>
+    <tr><td><code>env.*</code></td><td>date, time, day, ip, network, device, channel, isHoliday; <code>env.now</code> for schedule operators</td></tr>
+    <tr><td><code>action</code></td><td>The requested action</td></tr>
+  </tbody>
+</table>
+<p>Operators: <code>== != in "not in" &gt; &gt;= &lt; &lt;= contains "starts with" "within schedule" "outside schedule"</code>, all case-insensitive. Numbers are compared numerically, otherwise as text. The right-hand side may be a literal or another attribute (<code>resource.store == user.location</code>). A missing attribute never satisfies a condition, so a Restrict fails and a Deny or Grant does not match: <b>fail closed</b>.</p>
+
+<h2>4.6 Office hours and holidays (L-13)</h2>
+<p>A schedule has a time zone (Asia/Kolkata) and weekly windows such as Mon–Sat 09:30–18:30. A window whose end is before its start runs overnight (22:00–06:00: after-midnight times belong to the previous day's window). If the schedule excludes holidays, a holiday for the tenant closes it; holidays may be all-India or limited to regions, matched against the user's region.</p>
+
+<h2>4.7 Decision endpoints (L-14)</h2>
+<table>
+  <thead><tr><th>Endpoint</th><th>Use</th></tr></thead>
+  <tbody>
+    <tr><td><code>POST /authorize</code></td><td>Decide for any user (service integrations, simulator). Permission <code>UMS.POLICIES.DECISION.VIEW</code>. Logged.</td></tr>
+    <tr><td><code>POST /authorize/week</code></td><td>The same request for every hour of a week (simulator heat-map).</td></tr>
+    <tr><td><code>POST /me/authorize</code></td><td>Decide for the caller (from their own token): AMS.Api uses this for every action. Logged to the user action trail.</td></tr>
+    <tr><td><code>POST /me/authorize/batch</code></td><td>Up to <b>2000</b> checks in one call, answers in order, not logged (used to filter lists and build menus).</td></tr>
+    <tr><td><code>GET /me/directory?search=</code></td><td>Colleagues of the caller's tenant (AMS employee picker).</td></tr>
+  </tbody>
+</table>
+
+<h2>4.8 UMS protects itself (L-15, L-16)</h2>
+<ul>
+  <li>Each admin endpoint carries <code>[RequirePermission(module, resource, action)]</code>. The filter asks the same engine about the caller for <code>UMS.&lt;module&gt;.&lt;resource&gt;.&lt;action&gt;</code> and returns 403 with the reason when denied.</li>
+  <li><code>Security:RequireAuthentication = false</code> skips this filter. It is meant only for local demos and is <b>true</b> by default.</li>
+  <li>The tenant of a request comes from the <code>X-Tenant-Id</code> header, else the <code>tenant_id</code> claim. Only an active <code>SUPER_ADMIN</code> may work in another tenant.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">5</span>UMS application pipeline (L-17, L-18)</h1>
+<div class="flow">
+  <div><b>ExceptionLogging­Middleware</b>catches, logs to ExceptionLogs, RFC 7807</div>
+  <div><b>JWT bearer</b>signature, lifetime, session (L-05)</div>
+  <div><b>RequirePermission</b>engine check (L-15)</div>
+  <div><b>Controller</b>maps HTTP to a command/query</div>
+  <div><b>VMM.Mediator</b>ValidationBehavior → handler</div>
+  <div><b>Handler</b>domain + repositories, Result&lt;T&gt;</div>
+</div>
+<ul>
+  <li><b>Validation.</b> <code>ValidationBehavior</code> runs every FluentValidation validator for the request; failures raise a validation exception, which the API returns as 400 with the field messages.</li>
+  <li><b>Result mapping.</b> Handlers return <code>Result&lt;T&gt;</code> with an error code and message. The controller base maps a failure to an RFC 7807 problem: sign-in, refresh and session failures (<code>auth.*</code>, <code>session.*</code>) → 401 with a <code>code</code> extension; every other failure → 400 with the message.</li>
+  <li><b>Audit trail.</b> Every create, update, delete and revoke writes an <code>AuditLogs</code> row (actor, entity, action, summary, before/after JSON, IP).</li>
+  <li><b>User action trail.</b> Single decisions and sign-ins write <code>UserActions</code> (user, app, route, action key, Allow/Deny, reason, IP).</li>
+  <li><b>Exception log.</b> Unhandled exceptions are stored with severity, path, user and stack trace; admins mark them resolved.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">6</span>AMS web portal: authentication and session handling</h1>
+
+<h2>6.1 Sign-in hand-off (L-19)</h2>
+<p>Blazor Server runs over a WebSocket, which cannot set cookies. The portal therefore signs in in two steps:</p>
+<ol class="steps">
+  <li>The sign-in page calls UMS <code>auth/login</code> (app <code>AMS</code>, browser IP and user agent) from the server.</li>
+  <li>On success the tokens go into the server-side <b>token store</b> (L-20), and a <b>single-use ticket</b> (valid 60 seconds, in memory) is created.</li>
+  <li>The page posts a hidden form with the ticket and an antiforgery token to <code>POST /account/complete-login</code>.</li>
+  <li>That endpoint redeems the ticket and writes the HTTP-only cookie: <code>__Host-AMS.Auth</code>, Secure, SameSite=Lax, 60 minutes sliding, 12 hours absolute. Then it redirects to the return URL (local URLs only).</li>
+</ol>
+<p>The cookie contains only the identity and the session id; UMS tokens never reach the browser.</p>
+
+<h2>6.2 Token store (L-20)</h2>
+<ul>
+  <li>Holds per session id: access token and expiry, refresh token.</li>
+  <li>An access token within <b>60 s</b> of expiry is refreshed through UMS. Refreshes are serialised per session (one refresh at a time, then double-checked), so parallel API calls do not trigger token-reuse detection.</li>
+  <li>When UMS refuses a refresh, the reason is recorded in <code>EndedSessions</code> (kept 13 h) and the tokens are dropped.</li>
+</ul>
+
+<h2>6.3 Checks while the user works (L-21, L-22)</h2>
+<table>
+  <thead><tr><th>Check</th><th>When</th><th>Logic</th></tr></thead>
+  <tbody>
+    <tr><td>Cookie validator</td><td>Every HTTP request</td><td>Quick check: absolute lifetime, an ended-session record, tokens present. At most every <code>RevalidationSeconds</code> it also asks UMS <code>auth/session</code>. If the session ended, the principal is rejected and the cookie removed. If UMS is unreachable the request passes and is checked again next time.</td></tr>
+    <tr><td>Circuit revalidation</td><td>Every <code>RevalidationSeconds</code> (60; 20 in dev) on open pages</td><td>Ends the session if an API call already learned it ended, if the server idle backstop is reached, or if UMS reports it ended. Tolerates up to 5 consecutive UMS failures before signing out.</td></tr>
+    <tr><td>API call result</td><td>Each API call</td><td>A 401 with <code>X-Session-End</code> records the reason and triggers sign-out with that reason.</td></tr>
+  </tbody>
+</table>
+
+<h2>6.4 Idle timeout (L-23)</h2>
+<ul>
+  <li>The timeout is the tenant's <code>SessionTimeoutMinutes</code>, carried in the sign-in.</li>
+  <li><code>idle-timeout.js</code> listens for pointer, key, wheel, scroll and touch events. It reports activity to the server at most every 10 s, and shares it between tabs through <code>localStorage</code>.</li>
+  <li>While the user is active it calls <code>POST /account/keepalive</code> every timeout/4, clamped to 30 s–5 min. This renews the cookie and calls UMS <code>auth/session?touch=true</code>.</li>
+  <li>The monitor ticks every second. At one minute left it shows the warning with a countdown; at zero it signs out with reason <code>idle</code>.</li>
+</ul>
+
+<h2>6.5 Sign-out and session-end routing (L-24)</h2>
+<ul>
+  <li><code>POST /account/sign-out</code> requires an antiforgery token, so a link or image on another site cannot sign users out.</li>
+  <li>It records the end, calls UMS <code>auth/logout</code> for <code>signedout</code> and <code>idle</code> (UMS already knows the other reasons), drops the tokens, clears the cookie, sends <code>Clear-Site-Data: "cache"</code>, and redirects to the sign-in page with <code>?reason=</code>.</li>
+  <li>If a page becomes anonymous because the session ended, <code>RedirectToLogin</code> routes through the sign-out page, so the cookie is cleared and an idle session is closed in UMS.</li>
+  <li>The sign-in page translates the reason into a message: replaced, idle, revokedbyadmin, tokenreuse, accountdisabled, expired, signedout.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">7</span>AMS API: request handling</h1>
+
+<h2>7.1 API call service (L-25)</h2>
+<p>The portal reaches the API only through <code>IAPICall.CallingAPI&lt;TRes,TReq&gt;(apiName, request)</code>:</p>
+<ul>
+  <li>The route comes from <code>AmsApi:Routes[apiName]</code>, default <code>api/v1/{apiName}</code>. Names are constants in <code>AmsApiNames</code>, e.g. <code>GET_ASSETS</code> = <code>GetAssets</code>.</li>
+  <li>It sends <code>POST</code> with a JSON body (property names as in C#, enums as strings), <code>Authorization: Bearer &lt;fresh UMS token&gt;</code> and <code>X-Client-IP</code>.</li>
+  <li>A JSON <code>BaseResponse</code> is returned as is, for success and for refusals. A 401 also calls <code>SessionEnded(X-Session-End)</code>.</li>
+  <li>It <b>never throws</b> to pages. Transport, timeout and JSON errors become <code>responseCode = 1004</code> with a message; no token gives 401 without calling.</li>
+</ul>
+
+<h2>7.2 JWT validation and current actor (L-26)</h2>
+<ul>
+  <li><b>Validation.</b> AMS.Api validates the UMS token locally: issuer, audience, signing key, lifetime (30 s clock skew). It then requires <code>app == AMS</code> and a <code>sid</code>. A UMS-admin token is therefore rejected.</li>
+  <li><b>Current actor.</b> <code>HttpCurrentActor</code> builds the <code>Actor</code> (user id, tenant, emp code, name, e-mail) from the claims and keeps the bearer token for calls to UMS.</li>
+  <li><b>Client IP.</b> <code>X-Client-IP</code> is trusted only from configured forwarders (loopback plus <code>Ums:TrustedForwarders</code>). Otherwise the connection address is used.</li>
+</ul>
+
+<h2>7.3 Exception → response mapping (L-27)</h2>
+<table>
+  <thead><tr><th>Exception</th><th>HTTP</th><th>responseCode</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>AccessDeniedException</td><td>403</td><td>403</td><td>Message = UMS reason; logged at Information with the permission key</td></tr>
+    <tr><td>SessionEndedException</td><td>401</td><td>401</td><td>Adds <code>X-Session-End</code></td></tr>
+    <tr><td>AuthorizationUnavailableException</td><td>503</td><td>503</td><td>UMS unreachable: fail closed</td></tr>
+    <tr><td>AmsException NotFound / Duplicate / other</td><td>404 / 409 / 422</td><td>1001 / 1003 / 1002</td><td>Business rule messages from use cases or stored procedures</td></tr>
+    <tr><td>Anything else</td><td>500</td><td>1004</td><td>Generic message; full error logged</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">8</span>AMS use cases (business logic)</h1>
+
+<h2>8.1 Guard and filtering (L-28 – L-31)</h2>
+<ul>
+  <li><b><code>UmsAccessGuard.EnsureAsync(check)</code></b> calls UMS <code>me/authorize</code> with the user's own token and the environment:
+    <ul>
+      <li>IP;</li>
+      <li>network: <i>Office LAN</i> for loopback and private addresses (10/8, 172.16/12, 192.168/16, IPv6 site and link local, fc00::/7), else <i>Internet</i>;</li>
+      <li>device and channel, from configuration.</li>
+    </ul>
+    A deny throws <code>AccessDeniedException</code> with UMS's reason. UMS 401 becomes <code>SessionEndedException</code>; any other UMS failure becomes <code>AuthorizationUnavailableException</code> (fail closed).</li>
+  <li><b><code>FilterAsync</code></b> keeps the items whose View check UMS allows, in one batch call. <b><code>MatrixAsync</code></b> asks for N items × K actions in one batch and returns a bool grid; it fills the <code>Can*</code> flags of each row.</li>
+  <li><b>Capabilities</b> (<code>GetCapabilities</code>) are type-level checks of every module/resource/action, used for the menu and the page buttons. They only shape the UI; each action is checked again with the record's attributes.</li>
+  <li><b>Record attributes</b> (<code>ResourceAttrs</code>):
+    <ul>
+      <li>asset: assetTag, cost, requestable, location, region, category, status, statusType, department, assignedToEmpCode;</li>
+      <li>check-out adds assigneeEmpCode, assigneeEmploymentType, assigneeDepartment, assigneeLocation, assigneeRegion;</li>
+      <li>request adds requestedByEmpCode and requestStatus;</li>
+      <li>maintenance: cost (job) and assetCost;</li>
+      <li>stock: cost = unit cost × quantity, and quantity;</li>
+      <li>licence: cost, seats, category, manufacturer.</li>
+    </ul></li>
+</ul>
+
+<h2>8.2 Asset life cycle (L-32)</h2>
+<table>
+  <thead><tr><th>Operation</th><th>Guard checks (UMS)</th><th>Rules (use case + stored procedure)</th></tr></thead>
+  <tbody>
+    <tr><td>List / export / labels</td><td>View per asset (filter); Export or Print at type level</td><td>Filters: search, category, location, status, holder.</td></tr>
+    <tr><td>Get detail</td><td>View on the asset; row actions; Maintenance.Create</td><td>Includes history, maintenance, licences, components, current value.</td></tr>
+    <tr><td>Create</td><td>Create with the new record's attributes</td><td>Tag and name required; cost ≥ 0; tag unique per tenant; model, status and location must exist.</td></tr>
+    <tr><td>Edit</td><td>Edit on the record <b>as it is</b> and <b>as it will be</b></td><td>Moving to a location outside one's scope is therefore denied.</td></tr>
+    <tr><td>Check out</td><td>Checkout with asset + assignee attributes</td><td>Employee required and active in the directory; return date not in the past; asset not already issued; status Deployable. Publishes the check-out e-mail.</td></tr>
+    <tr><td>Check in</td><td>Checkin</td><td>Asset must be checked out; optional new status must exist. Publishes the check-in e-mail.</td></tr>
+    <tr><td>Audit</td><td>Audit</td><td>Next audit date must be in the future; sets last audit = today.</td></tr>
+    <tr><td>Delete</td><td>Delete</td><td>Asset must be checked in.</td></tr>
+  </tbody>
+</table>
+
+<h2>8.3 Asset request workflow (L-33)</h2>
+<div class="flow">
+  <div><b>Requestable</b>assets: Requestable, Deployable, free, Request allowed, no own pending request</div>
+  <div><b>Create</b>Request check (requestedBy = me); reason required; one pending per person and asset; e-mail desk</div>
+  <div><b>Approve</b>Approve on request <i>and</i> Checkout on asset for the requester; issues the asset atomically</div>
+  <div><b>Reject</b>Approve permission; reason required</div>
+  <div><b>Cancel</b>Void permission; Pending only</div>
+</div>
+<p>Decisions are allowed only while the request is <b>Pending</b>. Approval issues the asset, marks the request Approved, and <b>rejects every other pending request for the same asset</b> ("Asset issued to …"), all in one stored-procedure transaction. The requester receives the decision e-mail.</p>
+
+<h2>8.4 Licences (L-34) and stock (L-35)</h2>
+<ul>
+  <li><b>Licence:</b>
+    <ul>
+      <li>seats ≥ 1, and seats cannot be reduced below the number in use;</li>
+      <li>a seat goes to a person and/or an asset; one seat per person per licence;</li>
+      <li>no check-out when all seats are used or the licence has expired;</li>
+      <li>deleting requires all seats checked in;</li>
+      <li>the product key is returned only when the caller may edit the licence.</li>
+    </ul></li>
+  <li><b>Stock kinds</b> map to separate catalogue entries (ACCESSORIES / CONSUMABLES / COMPONENTS):
+    <ul>
+      <li><b>Accessory:</b> to a person, one each, returnable.</li>
+      <li><b>Consumable:</b> to a person, quantity ≤ available, reduces stock, not returnable.</li>
+      <li><b>Component:</b> into an asset, returnable.</li>
+    </ul>
+    Quantity cannot drop below the units out; delete requires all units in; the kind of an item cannot change. <code>Low</code> = available ≤ minimum quantity.</li>
+</ul>
+
+<h2>8.5 Reports (L-36) and CSV (L-37)</h2>
+<ul>
+  <li><b>Depreciation</b> (straight line):
+    <ul>
+      <li>months = whole months since purchase;</li>
+      <li>value = cost × max(0, 1 − months / category life), rounded to paise;</li>
+      <li>a category life of 0 means no depreciation.</li>
+    </ul></li>
+  <li><b>Due lists:</b>
+    <ul>
+      <li>audits due: next audit within 30 days;</li>
+      <li>warranty ending: warranty end within the next 90 days;</li>
+      <li>overdue: checked out with an expected check-in date before today;</li>
+      <li>licences expiring (digest): within 30 days.</li>
+    </ul></li>
+  <li><b>Dashboard and reports</b> cover only the assets the caller may view (the same filter as lists).</li>
+  <li><b>CSV:</b>
+    <ul>
+      <li>cells starting with <code>= + - @</code> get a leading apostrophe (formula-injection protection);</li>
+      <li>cells containing a comma, quote or newline are quoted;</li>
+      <li>the file is UTF-8 with a BOM, for Excel.</li>
+    </ul></li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">9</span>AMS data layer: Dapper and stored procedures (L-38, L-39)</h1>
+<ul>
+  <li><b><code>DapperHelper</code></b>:
+    <ul>
+      <li>opens a connection per call and runs a stored procedure;</li>
+      <li>logs queries slower than <b>3 s</b> and SQL errors with the procedure name and parameters (secrets masked), then rethrows;</li>
+      <li>methods: <code>ListAsync</code>, <code>SingleAsync</code>, <code>MultipleAsync</code> (several result sets), <code>WriteAsync</code>, <code>ExecuteBatchAsync</code>.</li>
+    </ul></li>
+  <li><b>Write contract.</b> Every write procedure has outputs <code>@Error_Code INT</code>, <code>@Error_Message NVARCHAR</code> and, when inserting, <code>@Record_Id</code>. 0 = success, 1001 = not found, 1002 = rule violation, 1003 = duplicate. <code>DbResult.EnsureOk()</code> turns a failure into an <code>AmsException</code> with the same code.</li>
+  <li><b>Tenant isolation.</b> Every table has <code>TenantId</code>; every procedure takes <code>@TenantId</code> from the token. A row of another tenant is "not found".</li>
+  <li><b>Audit fields.</b> Writes receive <code>@ActorEmpCode</code>, <code>@ActorName</code> and <code>@Now</code> (IST business time) and add a <code>History</code> row (item type, id, action, target, note, location).</li>
+  <li><b>Enums</b> are passed and stored as strings (readable in SQL).</li>
+  <li><b>Schema:</b> 15 tables:
+    <ul>
+      <li>setup: Categories, Manufacturers, Suppliers, Locations, Departments, StatusLabels, AssetModels;</li>
+      <li>assets: Assets, Maintenances, AssetRequests;</li>
+      <li>licences: Licenses, LicenseSeats;</li>
+      <li>stock: StockItems, StockAssignments;</li>
+      <li>History.</li>
+    </ul>
+    Plus the view <code>vw_Assets</code> and 34 procedures named <code>PRO_AMS_&lt;AREA&gt;_&lt;ACTION&gt;</code>.</li>
+  <li><b>Initialisation</b> (development, <code>AutoMigrate</code>):
+    <ul>
+      <li>create the database if missing;</li>
+      <li>run <code>001_ams_schema.sql</code> once (only when <code>dbo.Assets</code> does not exist);</li>
+      <li>always re-run <code>002_ams_procedures.sql</code> (CREATE OR ALTER), split on <code>GO</code>;</li>
+      <li>if <code>DemoTenantId</code> is set and the database is empty, write demo data through the same procedures.</li>
+    </ul></li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">10</span>Notifications (L-40 – L-42)</h1>
+<div class="flow">
+  <div><b>Use case</b><code>INotificationPublisher.Publish(model)</code></div>
+  <div><b>NotificationQueue</b>bounded channel, 1000, drop oldest</div>
+  <div><b>NotificationWorker</b>background service, scope per item</div>
+  <div><b>EmailNotifier&lt;T&gt;</b>resolver → policy → template → sender</div>
+  <div><b>SmtpEmailSender</b>SMTP or pickup directory</div>
+</div>
+<ul>
+  <li><b>Separation</b> (SRP):
+    <ul>
+      <li><code>IRecipientResolver&lt;T&gt;</code> decides who receives a message;</li>
+      <li><code>IRecipientPolicy</code> drops invalid addresses, de-duplicates and keeps only <code>AllowedDomains</code>;</li>
+      <li><code>IEmailTemplate&lt;T&gt;</code> builds the subject and the HTML body (values HTML-encoded);</li>
+      <li><code>IEmailSender</code> sends.</li>
+    </ul>
+    A new e-mail = a model + a template + a resolver; nothing else changes.</li>
+  <li><b>Failure isolation.</b> Sending runs after the transaction, in the background. A mail failure is logged and never fails the user's action.</li>
+  <li><b>Daily digest.</b> <code>DailyDigestService</code> wakes at <code>DailyDigestTime</code> (IST) and builds, per tenant:
+    <ul>
+      <li>overdue check-ins;</li>
+      <li>audits due within 30 days;</li>
+      <li>licences expiring within 30 days;</li>
+      <li>low stock.</li>
+    </ul>
+    It sends to <code>AssetDeskEmail</code>, and is skipped when there is nothing to report.</li>
+  <li><b>People directory.</b> <code>UmsPeopleDirectory</code> searches UMS <code>me/directory</code> and caches results per tenant and search for 2 minutes.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">11</span>In-house building blocks (L-43, L-44)</h1>
+<h2>11.1 VMM.Mediator</h2>
+<ul>
+  <li><b>Contracts:</b> <code>IRequest&lt;T&gt;</code>, <code>IRequestHandler&lt;TReq,TRes&gt;</code>, <code>IPipelineBehavior&lt;TReq,TRes&gt;</code>, <code>ISender</code> / <code>IPublisher</code> / <code>IMediator</code>, <code>INotificationHandler&lt;T&gt;</code>, <code>Unit</code>.</li>
+  <li><b>Send:</b>
+    <ul>
+      <li>resolves the handler and all behaviours for the request type from DI;</li>
+      <li>behaviours wrap the handler in registration order (first registered = outermost);</li>
+      <li>the generic pipeline per request type is built once and cached, so no reflection runs per call;</li>
+      <li>a missing handler raises <code>HandlerNotFoundException</code>.</li>
+    </ul></li>
+  <li><b>Publish:</b> runs every <code>INotificationHandler&lt;T&gt;</code> of the event's type and of its base classes, in order; no handler is fine.</li>
+  <li><b>Registration:</b> <code>AddMediator(cfg =&gt; cfg.RegisterServicesFromAssembly(..).AddOpenBehavior(..))</code> scans assemblies for handlers.</li>
+</ul>
+<h2>11.2 VMM.Mapper</h2>
+<ul>
+  <li><b>Profiles:</b> a <code>MapperProfile</code> declares <code>CreateMap&lt;TSource,TDest&gt;()</code>, with <code>ForMember</code>, <code>Ignore</code>, <code>ConstructUsing</code> and <code>ReverseMap</code>.</li>
+  <li><b>Plan per map, compiled once:</b>
+    <ul>
+      <li>pick a factory: the given factory, else a parameterless constructor, else the public constructor with the most parameters that can all be filled (records);</li>
+      <li>then assign the writable properties not set by the constructor;</li>
+      <li>getters are compiled expression trees.</li>
+    </ul></li>
+  <li><b>Conversions:</b> assignable types, nullable, enum ↔ string / number, IConvertible, nested maps, collections (List, array, IReadOnlyList…).</li>
+  <li><b>Validation:</b> <code>AssertConfigurationIsValid()</code> lists every destination member nothing maps to, and every type that cannot be converted. <code>AddObjectMapper(assemblies)</code> runs it at start-up.</li>
+</ul>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">12</span>Configuration reference</h1>
+<table>
+  <thead><tr><th>Component</th><th>Key</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>UMS API</td><td><code>Persistence:Provider</code>, <code>ConnectionStrings:Default</code></td><td>InMemory (demo) or SqlServer</td></tr>
+    <tr><td>UMS API</td><td><code>Jwt:Issuer / Audience / Secret</code></td><td>Token signing; secret ≥ 32 chars from a secret store</td></tr>
+    <tr><td>UMS API</td><td><code>Security:RequireAuthentication</code></td><td>true in production</td></tr>
+    <tr><td>UMS (per tenant)</td><td>Security Settings</td><td>SessionTimeoutMinutes, SingleDeviceLogin, MaxFailedLogins, LockoutMinutes, PasswordMinLength, JwtExpiryMinutes, RefreshTokenDays</td></tr>
+    <tr><td>AMS.Api</td><td><code>ConnectionStrings:Ams</code>, <code>Ams:Database:AutoMigrate / DemoTenantId</code></td><td>Database; dev-only auto-migration and seed</td></tr>
+    <tr><td>AMS.Api / Portal</td><td><code>Ums:BaseUrl / AppCode / Device / Channel / JwtIssuer / JwtAudience / JwtSecret / TrustedForwarders</code></td><td>UMS connection and token validation</td></tr>
+    <tr><td>AMS.Api</td><td><code>Notifications:*</code>, <code>EmailServerSettings:*</code></td><td>From, AssetDeskEmail, PortalUrl, AllowedDomains, DailyDigestEnabled/Time; SMTP or PickupDirectory</td></tr>
+    <tr><td>AMS.Portal</td><td><code>AmsApi:BaseUrl / TimeoutSeconds / Routes</code></td><td>API location and route overrides</td></tr>
+    <tr><td>AMS.Portal</td><td><code>Auth:RevalidationSeconds / CookieLifetimeMinutes / AbsoluteLifetimeHours</code></td><td>60 / 60 / 12</td></tr>
+    <tr><td>All</td><td><code>Logging:FilePath</code></td><td>Serilog rolling files per level</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">13</span>Tests</h1>
+<table>
+  <thead><tr><th>Project</th><th>Tests</th><th>Covers</th></tr></thead>
+  <tbody>
+    <tr><td>UMS.Tests</td><td class="c">45</td><td>Decision engine (layers, scopes, policies, schedules, holidays, grants), storage formats, sessions (single device, refresh rotation, reuse, idle, lockout, validator end-recording), AMS policies.</td></tr>
+    <tr><td>AMS.Tests</td><td class="c">29</td><td>Use cases with fakes (UMS asked first; deny writes nothing; return date; procedure errors; row actions; approval needs checkout; rejection reason); ApiCallService; UmsAccessGuard (fail closed, session end, network); recipient policy; depreciation; CSV. 4 SQL Server integration tests (tenant isolation, double check-out, round trip with history, unique tags) run when <code>AMS_TEST_SQL</code> is set.</td></tr>
+    <tr><td>BuildingBlocks.Tests</td><td class="c">14</td><td>Mediator dispatch, Unit, behaviour order, container behaviours, missing handler, events with base types; mapper records, conversions, nested and collections, ignore, copy onto object, reverse, validation, registration.</td></tr>
+  </tbody>
+</table>
+<p>Run: <code>dotnet test UMS_Sol.sln</code>. End-to-end behaviour was verified in a browser:</p>
+<ul>
+  <li>role views;</li>
+  <li>single-device kick-out;</li>
+  <li>idle sign-out;</li>
+  <li>token refresh with 1-minute tokens;</li>
+  <li>admin revoke;</li>
+  <li>request → approve → issue, with e-mails.</li>
+</ul>
+
+</body>
+</html>

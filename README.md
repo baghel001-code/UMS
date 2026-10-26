@@ -55,6 +55,14 @@ database/                 001 schema, 002 sign-in sessions and lockout (SQL Serv
 docs/ARCHITECTURE.md      Access model, API contract, schema, scaling notes
 ```
 
+## Documentation (PDF)
+
+| Document | For |
+|----------|-----|
+| [User Manual](docs/manuals/VMM-UMS-AMS-User-Manual.pdf) | Everyone: logins, roles, step-by-step use of both portals, with screenshots |
+| [Technical Logic Reference](docs/manuals/VMM-UMS-AMS-Technical-Logic-Reference.pdf) | Developers and reviewers: catalogue of all logics (L-01 – L-44) and how each works |
+| [Business Rules & Validations](docs/manuals/VMM-UMS-AMS-Business-Rules-and-Validations.pdf) | Management and audit: controls, business rules, validations, control status |
+
 ## Run it in Visual Studio
 
 1. Open `UMS_Sol.sln`.

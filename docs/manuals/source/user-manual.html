@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VMM UMS &amp; Asset Management – User Manual</title>
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="logo">V</div>
+  <div class="kicker">Vishal Mega Mart · IT Applications</div>
+  <h1>User Manual</h1>
+  <div class="sub">User Management System (UMS) and Asset Management System (AMS): signing in, the roles, and what each role can do, step by step.</div>
+  <div class="meta">
+    <div><b>Applies to</b>UMS Admin Portal · AMS Web Portal</div>
+    <div><b>Audience</b>All employees, asset staff, UMS administrators</div>
+    <div><b>Version</b>1.0 · October 2026</div>
+  </div>
+  <div class="band">Document 1 of 3<br>Companion documents: Technical Logic Reference · Business Rules &amp; Validations</div>
+</section>
+
+<h1 class="chapter" style="page-break-before:avoid">Contents</h1>
+<div class="toc">
+  <div><span>1</span>Introduction</div>
+  <div><span>2</span>Logins and roles</div>
+  <div class="sub">2.1 Demo accounts · 2.2 Roles in Asset Management · 2.3 What each role sees</div>
+  <div><span>3</span>Signing in, signing out and staying secure</div>
+  <div class="sub">3.1 Sign in · 3.2 One device at a time · 3.3 Idle timeout · 3.4 Lockout and passwords · 3.5 Sign-in messages</div>
+  <div><span>4</span>Employees: My Assets and asset requests</div>
+  <div><span>5</span>Asset Managers: running assets of a location</div>
+  <div><span>6</span>Asset Administrators: full asset management</div>
+  <div class="sub">6.1 Assets · 6.2 Licences · 6.3 Accessories, consumables, components · 6.4 Maintenance · 6.5 Reports and activity · 6.6 Setup lists</div>
+  <div><span>7</span>IT Support and Auditors: read-only access</div>
+  <div><span>8</span>UMS Administrators: the UMS Admin Portal</div>
+  <div class="sub">8.1 Pages · 8.2 Common tasks · 8.3 Security settings · 8.4 Active sessions</div>
+  <div><span>9</span>E-mails sent by Asset Management</div>
+  <div><span>10</span>Troubleshooting and FAQ</div>
+</div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter" style="page-break-before:avoid;margin-top:10mm"><span class="num">1</span>Introduction</h1>
+<p class="lead">Vishal Mega Mart uses one central system, the <b>User Management System (UMS)</b>, to decide who may use which application and what they may do in it. The <b>Asset Management System (AMS)</b> is one of those applications: it tracks every company asset, from laptops and POS terminals to software licences, toner and spare parts.</p>
+
+<div class="cards">
+  <div class="card"><h4>One account</h4><p>You sign in to every application with your UMS account (your company e-mail and password).</p></div>
+  <div class="card"><h4>Access decided by UMS</h4><p>Your roles, the locations they cover and company policies (office hours, value limits) are kept in UMS. AMS asks UMS before every action.</p></div>
+  <div class="card"><h4>Clear reasons</h4><p>If something is not allowed, the screen tells you why, for example "role scoped to HO-GGN" or "only during operating hours".</p></div>
+</div>
+
+<h2>Where to find the applications</h2>
+<table>
+  <thead><tr><th>Application</th><th>Who uses it</th><th>Address (development)</th></tr></thead>
+  <tbody>
+    <tr><td><b>AMS Web Portal</b><br><span class="small">Asset Management</span></td><td>Every employee (My Assets, requests); asset managers and administrators</td><td><code>http://localhost:5300</code></td></tr>
+    <tr><td><b>UMS Admin Portal</b><br><span class="small">Identity &amp; Access Admin</span></td><td>UMS administrators (users, roles, policies, settings, sessions)</td><td><code>http://localhost:5200</code></td></tr>
+  </tbody>
+</table>
+<p class="small">In production your IT team publishes these on company addresses; the screens are the same.</p>
+
+<div class="note"><b>How to read this manual</b>Chapter 2 lists the sign-in accounts and roles. Chapter 3 applies to everyone. Then read the chapter for your role: employees chapter 4, asset managers chapter 5, asset administrators chapters 5 and 6, IT support and auditors chapter 7, UMS administrators chapter 8.</div>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">2</span>Logins and roles</h1>
+
+<h2>2.1 Demo accounts</h2>
+<p>The development and training environment contains these accounts. Every account also holds the <b>Employee (Self Service)</b> role, which every member of staff gets.</p>
+<table>
+  <thead><tr><th>Name · Emp code</th><th>Sign-in e-mail</th><th>Password</th><th>Roles in UMS</th><th>In Asset Management</th></tr></thead>
+  <tbody>
+    <tr><td><b>Ankit Saxena</b><br>VMM10009</td><td><code>ankit.saxena@vmm.example</code></td><td><code>Admin@12345</code></td><td>UMS Administrator, Super Administrator</td><td>Everything; also administers UMS</td></tr>
+    <tr><td><b>Rahul Agarwal</b><br>VMM10010</td><td><code>rahul.agarwal@vmm.example</code></td><td><code>Demo@12345</code></td><td>Buyer, <b>Asset Administrator</b> (a temporary Procurement Head role that expired on 10 Oct 2026)</td><td>Everything in AMS, including setup and disposal. Cannot approve his own requests.</td></tr>
+    <tr><td><b>Sneha Iyer</b><br>VMM10008</td><td><code>sneha.iyer@vmm.example</code></td><td><code>Demo@12345</code></td><td>IT Support Engineer, <b>Asset Manager scoped to HO-GGN</b></td><td>Runs head-office assets; setup is view-only; cannot dispose assets above ₹1,00,000</td></tr>
+    <tr><td><b>Priya Verma</b><br>VMM10002</td><td><code>priya.verma@vmm.example</code></td><td><code>Demo@12345</code></td><td>Cashier (store S045)</td><td>Employee: My Assets, request an asset</td></tr>
+    <tr><td><b>Imran Khan</b><br>VMM10007</td><td><code>imran.khan@vmm.example</code></td><td><code>Demo@12345</code></td><td>Warehouse Executive · <b>contract staff</b> (account valid until 31 Mar 2027)</td><td>Employee. High-value assets cannot be issued to him.</td></tr>
+    <tr><td><b>Aarav Sharma</b><br>VMM10001</td><td><code>aarav.sharma@vmm.example</code></td><td><code>Demo@12345</code></td><td>Store Manager (stores S045, S046)</td><td>Employee</td></tr>
+    <tr><td><b>Rohit Gupta</b><br>VMM10003</td><td><code>rohit.gupta@vmm.example</code></td><td><code>Demo@12345</code></td><td>Shift Supervisor (S045)</td><td>Employee</td></tr>
+    <tr><td><b>Neha Singh</b><br>VMM10004</td><td><code>neha.singh@vmm.example</code></td><td><code>Demo@12345</code></td><td>Accounts Executive</td><td>Employee</td></tr>
+    <tr><td><b>Vikram Mehta</b><br>VMM10005</td><td><code>vikram.mehta@vmm.example</code></td><td><code>Demo@12345</code></td><td>Financial Controller</td><td>Employee</td></tr>
+    <tr><td><b>Kavya Nair</b><br>VMM10006</td><td><code>kavya.nair@vmm.example</code></td><td><code>Demo@12345</code></td><td>HR Executive (South)</td><td>Employee</td></tr>
+  </tbody>
+</table>
+<div class="warn"><b>Demo passwords are for training only</b>The passwords above exist only in the development environment. In production every person signs in with their own password, which an administrator sets or the person changes; nobody shares accounts.</div>
+
+<h2>2.2 Roles in Asset Management</h2>
+<p>Roles are given in UMS (chapter 8). A role can be limited to locations (a <i>scope</i>), for example "Asset Manager for HO-GGN only", and can be given for a period (valid from / to).</p>
+<table>
+  <thead><tr><th>Role</th><th>Meant for</th><th>What it allows in AMS</th></tr></thead>
+  <tbody>
+    <tr><td><b>Asset Administrator</b><br><code>ASSET_ADMIN</code></td><td>Central IT asset team</td><td>Everything: assets, licences, stock, requests, maintenance, reports, exports, setup lists, disposal.</td></tr>
+    <tr><td><b>Asset Manager</b><br><code>ASSET_MANAGER</code></td><td>Location IT / admin staff; normally given with a location scope</td><td>Everything except changing setup lists (view only). Cannot delete an asset that cost more than ₹1,00,000.</td></tr>
+    <tr><td><b>IT Support Engineer</b><br><code>IT_SUPPORT</code></td><td>Helpdesk</td><td>Dashboard and asset list (view only).</td></tr>
+    <tr><td><b>Internal Auditor</b><br><code>AUDITOR</code></td><td>Audit team</td><td>View and export everything (read-only).</td></tr>
+    <tr><td><b>Employee</b><br><code>EMPLOYEE</code></td><td>Every member of staff</td><td>My Assets; request an asset; see and cancel own requests; view an asset that is issued to them.</td></tr>
+    <tr><td><b>Super Administrator</b><br><code>SUPER_ADMIN</code></td><td>Break-glass only</td><td>Everything in every application.</td></tr>
+  </tbody>
+</table>
+
+<h2>2.3 What each role sees</h2>
+<p>The menu on the left shows only what UMS allows you. ✓ = full use, <span class="part">◐</span> = limited (see note), — = not shown.</p>
+<table>
+  <thead><tr><th>Page</th><th class="c">Asset Admin</th><th class="c">Asset Manager</th><th class="c">IT Support</th><th class="c">Auditor</th><th class="c">Employee</th></tr></thead>
+  <tbody>
+    <tr><td>Dashboard</td><td class="c yes">✓</td><td class="c part">◐ scope</td><td class="c part">◐ view</td><td class="c part">◐ view</td><td class="c no">—</td></tr>
+    <tr><td>My Assets</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td>Assets (list, detail, check-out/in, audit)</td><td class="c yes">✓</td><td class="c part">◐ scope</td><td class="c part">◐ view</td><td class="c part">◐ view, export</td><td class="c part">◐ own items</td></tr>
+    <tr><td>Licences, Accessories, Consumables, Components</td><td class="c yes">✓</td><td class="c part">◐ scope</td><td class="c no">—</td><td class="c part">◐ view</td><td class="c no">—</td></tr>
+    <tr><td>Asset Requests</td><td class="c yes">✓ approve</td><td class="c yes">✓ approve</td><td class="c part">◐ own</td><td class="c part">◐ view</td><td class="c part">◐ own</td></tr>
+    <tr><td>Maintenance</td><td class="c yes">✓</td><td class="c part">◐ scope</td><td class="c no">—</td><td class="c part">◐ view</td><td class="c no">—</td></tr>
+    <tr><td>Reports, Activity Log</td><td class="c yes">✓</td><td class="c part">◐ scope</td><td class="c no">—</td><td class="c part">◐ view, export</td><td class="c no">—</td></tr>
+    <tr><td>Setup lists (models, categories, locations…)</td><td class="c yes">✓</td><td class="c part">◐ view</td><td class="c no">—</td><td class="c part">◐ view</td><td class="c no">—</td></tr>
+  </tbody>
+</table>
+<p class="small">"Scope": an Asset Manager scoped to HO-GGN sees and changes only HO-GGN assets, stock and maintenance, and items not tied to a location such as licences. Company policies (chapter 5) apply on top of this table.</p>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">3</span>Signing in, signing out and staying secure</h1>
+
+<h2>3.1 Sign in</h2>
+<ol class="steps">
+  <li>Open the AMS Web Portal (or the UMS Admin Portal).</li>
+  <li>Enter your company e-mail and password, then click <b>Sign in</b>.</li>
+  <li>You land on your start page: the <b>Dashboard</b> if you may see it, otherwise <b>My Assets</b>.</li>
+</ol>
+<div class="cards two">
+  <figure><img src="img/ams-login.jpg"><figcaption>AMS sign-in page</figcaption></figure>
+  <figure><img src="img/ums-login.jpg"><figcaption>UMS Admin Portal sign-in page</figcaption></figure>
+</div>
+<p>Your name and employee code appear at the top right. To leave, click <b>Sign out</b>. Signing out also ends your session in UMS.</p>
+
+<h2>3.2 One device at a time</h2>
+<p>When <b>single-device login</b> is switched on (it is, by default), you can be signed in to an application on one browser or device only. If you sign in somewhere else, the first browser is signed out at its next action and shows:</p>
+<figure class="half"><img src="img/ams-login-replaced.jpg"><figcaption>"You signed in on another device, so you were signed out here."</figcaption></figure>
+<div class="tip"><b>Did you not sign in elsewhere?</b>Change your password at once and tell IT security: somebody may know your password.</div>
+
+<h2>3.3 Idle timeout</h2>
+<p>If you do not use the application for the tenant's idle time (30 minutes by default), you are signed out automatically. One minute before, a warning appears with a countdown. Click <b>Stay signed in</b> to continue, or <b>Sign out</b>. Activity in any tab of the same browser counts.</p>
+<figure class="half"><img src="img/ams-idle-warning.png"><figcaption>Warning shown one minute before the idle sign-out (screenshot taken with a 1-minute timeout)</figcaption></figure>
+
+<h2>3.4 Lockout and passwords</h2>
+<ul>
+  <li>After <b>5 wrong passwords</b> in a row the account is locked for <b>30 minutes</b>. The message says how long. A UMS administrator can also reset the password.</li>
+  <li>A new password needs at least <b>8 characters</b> with an <b>upper-case letter, a lower-case letter and a digit</b>, and at least the tenant's minimum length (12 for Vishal Mega Mart).</li>
+  <li>Accounts that are disabled, or whose expiry date has passed (contract staff), cannot sign in.</li>
+</ul>
+
+<h2>3.5 Sign-in messages</h2>
+<table>
+  <thead><tr><th>Message</th><th>What happened</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr><td>Invalid email or password.</td><td>The e-mail or password is wrong.</td><td>Check Caps Lock and try again. After 5 attempts the account locks.</td></tr>
+    <tr><td>Too many failed sign-ins. The account is locked for 30 minutes.</td><td>Lockout.</td><td>Wait, or ask a UMS administrator.</td></tr>
+    <tr><td>This account is disabled.</td><td>Your status is not Active.</td><td>Contact HR or IT.</td></tr>
+    <tr><td>Application AMS is not registered or not enabled for your organisation.</td><td>AMS is switched off for your tenant.</td><td>Contact IT.</td></tr>
+    <tr><td>You signed in on another device, so you were signed out here.</td><td>Single-device login.</td><td>Sign in again here, or keep using the other device.</td></tr>
+    <tr><td>You were signed out after a period of inactivity.</td><td>Idle timeout.</td><td>Sign in again.</td></tr>
+    <tr><td>An administrator ended your session.</td><td>Ended from Active Sessions (e.g. lost laptop).</td><td>Sign in again; contact IT if unexpected.</td></tr>
+    <tr><td>Your session was ended for security reasons.</td><td>An old sign-in token was used again, which can mean it was stolen.</td><td>Sign in again and tell IT security.</td></tr>
+    <tr><td>Your session has expired.</td><td>The maximum session length (7 days) or the 12-hour portal limit was reached.</td><td>Sign in again.</td></tr>
+  </tbody>
+</table>
+<figure class="half"><img src="img/ams-login-error.jpg"><figcaption>A wrong password</figcaption></figure>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">4</span>Employees: My Assets and asset requests</h1>
+<p>Every employee can see what is issued to them and ask for equipment. Sign in as <b>Priya Verma</b> or <b>Imran Khan</b> to try it.</p>
+
+<h2>4.1 My Assets</h2>
+<p><b>My Assets</b> lists everything issued to you:</p>
+<ul>
+  <li><b>Assets</b>: tag, model, serial number, issue date, the date to return it (if any) and location. Click an asset tag to open its details.</li>
+  <li><b>Software</b>: the licence seats you hold.</li>
+  <li><b>Accessories &amp; supplies</b>: accessories on loan and recent consumables.</li>
+</ul>
+<figure><img src="img/ams-priya-my.jpg"><figcaption>My Assets for Priya Verma (cashier)</figcaption></figure>
+<p>To return an item, take it to your IT / asset desk. They check it in and you receive an e-mail.</p>
+
+<h2>4.2 Request an asset</h2>
+<ol class="steps">
+  <li>Open <b>Asset Requests</b> and click <b>Request an asset</b> (also on My Assets).</li>
+  <li>Choose an asset from the list. It shows assets that are offered for request, ready to deploy and not issued.</li>
+  <li>Write why you need it and click <b>Submit request</b>.</li>
+</ol>
+<figure><img src="img/ams-priya-request-dialog.jpg"><figcaption>Requesting an asset</figcaption></figure>
+<p>The asset desk receives an e-mail. You get a copy, and another e-mail when the request is approved or rejected. When it is approved, the asset is issued to you and appears under My Assets.</p>
+<ul>
+  <li>You can have only one pending request for the same asset.</li>
+  <li>You can <b>Cancel</b> your own request while it is pending.</li>
+  <li>You see your own requests only.</li>
+</ul>
+<figure><img src="img/ams-priya-requests.jpg"><figcaption>Asset Requests for an employee: own requests, with Cancel while pending</figcaption></figure>
+
+<h2>4.3 Pages you cannot use</h2>
+<p>Pages outside your role are not in your menu. If you open one through a link, AMS explains why:</p>
+<figure><img src="img/ams-priya-denied.jpg"><figcaption>An employee opening Reports: "Module: no permission on module Reports"</figcaption></figure>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">5</span>Asset Managers: running assets of a location</h1>
+<p>An Asset Manager runs the assets of the locations in their role scope. Sign in as <b>Sneha Iyer</b> (Asset Manager for head office HO-GGN) to try it. Everything in chapter 6 applies, within the limits below.</p>
+
+<div class="cards">
+  <div class="card"><h4>Your locations only</h4><p>Lists, figures and actions cover only the locations in your scope. Assets elsewhere are not shown, and you cannot move an asset to another location.</p></div>
+  <div class="card"><h4>Setup is view-only</h4><p>You can see models, categories, suppliers and locations but not change them. Ask an Asset Administrator.</p></div>
+  <div class="card"><h4>Disposal limit</h4><p>You cannot delete an asset that cost more than ₹1,00,000. An Asset Administrator must do it.</p></div>
+</div>
+<figure><img src="img/ams-sneha-dashboard.jpg"><figcaption>Dashboard for Sneha (HO-GGN only): all figures are for her locations</figcaption></figure>
+<figure><img src="img/ams-sneha-assets.jpg"><figcaption>Assets list for Sneha: only HO-GGN assets; the actions menu offers only what she may do</figcaption></figure>
+
+<h2>5.1 Company rules that apply to everyone handling assets</h2>
+<table>
+  <thead><tr><th>Rule</th><th>Effect on screen</th></tr></thead>
+  <tbody>
+    <tr><td>Assets can be checked out only during store operating hours (08:00–23:00).</td><td>Outside these hours Check out is refused, with the reason.</td></tr>
+    <tr><td>Assets costing over ₹1,50,000 cannot be issued to contract, intern or vendor staff.</td><td>Checking out a MacBook to Imran Khan (contract) is refused.</td></tr>
+    <tr><td>Nobody can approve their own asset request.</td><td>No Approve button on your own requests.</td></tr>
+    <tr><td>Approving requests needs multi-factor authentication (MFA) enabled on your account.</td><td>No Approve button if MFA is not enabled for you.</td></tr>
+    <tr><td>Exports are blocked on personal / unmanaged devices.</td><td>Export is refused on an unmanaged device.</td></tr>
+    <tr><td>Contract, intern and vendor staff cannot delete records.</td><td>No Delete button.</td></tr>
+  </tbody>
+</table>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">6</span>Asset Administrators: full asset management</h1>
+<p>Sign in as <b>Rahul Agarwal</b> to try everything in this chapter. The <b>Dashboard</b> shows:</p>
+<ul>
+  <li>key figures, with quick actions;</li>
+  <li>assets by category, location and status;</li>
+  <li>audits due in the next 30 days;</li>
+  <li>overdue check-ins;</li>
+  <li>warranties ending in the next 90 days;</li>
+  <li>recent activity.</li>
+</ul>
+<figure><img src="img/ams-rahul-dashboard.jpg"><figcaption>Dashboard for an Asset Administrator</figcaption></figure>
+
+<h2>6.1 Assets</h2>
+<p>An <b>asset</b> is a single tracked item with a unique tag (e.g. VMM-LT-1007): a laptop, desktop, POS terminal, printer, handheld or server. Each asset has:</p>
+<ul>
+  <li>a <b>model</b>, which gives its manufacturer and category;</li>
+  <li>a <b>status</b> such as Ready to Deploy, Out for Repair, Broken or Retired;</li>
+  <li>a <b>location</b> and, optionally, a department and supplier;</li>
+  <li>purchase date and cost, and a warranty period;</li>
+  <li>a <b>Requestable</b> flag: whether employees may request it.</li>
+</ul>
+<figure><img src="img/ams-assets.jpg"><figcaption>Assets list with filters (holder, category, location, status), Print labels, Export CSV and New asset</figcaption></figure>
+
+<h3>Add an asset</h3>
+<ol class="steps">
+  <li>Click <b>New asset</b>.</li>
+  <li>Fill in asset tag, name, model, status and location (required). Add serial, department, supplier, purchase date, cost, order number, warranty months and notes as needed.</li>
+  <li>Tick <b>Requestable</b> if employees may request it. Click <b>Save</b>.</li>
+</ol>
+<figure><img src="img/ams-asset-new.jpg"><figcaption>New asset dialog</figcaption></figure>
+
+<h3>Check out (issue) and check in (return)</h3>
+<ol class="steps">
+  <li>Open the asset (click its row) or use the ⋮ menu in the list. Click <b>Check out</b>.</li>
+  <li>Pick the employee from the UMS directory, optionally the expected return date and a note. Click <b>Check out</b>.</li>
+  <li>The employee receives an e-mail. The asset shows "Checked out to …".</li>
+  <li>When it comes back, click <b>Check in</b>, optionally choose its new status (e.g. Out for Repair) and add a note.</li>
+</ol>
+<figure><img src="img/ams-checkout-dialog.jpg"><figcaption>Checking out an asset. UMS checks the asset and the receiving employee together.</figcaption></figure>
+<div class="note"><b>Only deployable, free assets can be checked out</b>An asset that is already issued, or whose status is not deployable (Broken, Retired…), is refused with a clear message.</div>
+
+<h3>Asset details</h3>
+<p>The detail page shows all data, the current value after depreciation, and a full history (created, edited, checked out and in, audited, licences installed). Tabs list maintenance, licences and components installed in it. The buttons at the top are those you are allowed to use.</p>
+<figure><img src="img/ams-asset-detail.jpg"><figcaption>Asset details with history</figcaption></figure>
+
+<h3>Audit, labels, export, delete</h3>
+<ul>
+  <li><b>Audit</b>: confirms you saw the asset and sets the next audit date (must be in the future).</li>
+  <li><b>Print labels</b>: printable tag labels (asset tag, name, location) for the assets in the list; filter by location first. Requires the Print permission.</li>
+  <li><b>Export CSV</b>: the filtered list as a spreadsheet. Requires the Export permission and a managed device.</li>
+  <li><b>Delete</b>: only for assets that are checked in. Managers cannot delete assets above ₹1,00,000.</li>
+</ul>
+<figure><img src="img/ams-labels.jpg"><figcaption>Asset labels, ready to print</figcaption></figure>
+
+<h3>Asset requests: approve or reject</h3>
+<p><b>Asset Requests</b> shows pending requests by default. Click <b>Approve</b> to issue the asset to the requester at once, or <b>Reject</b> and give a reason. The requester is e-mailed either way. When a request is approved, other pending requests for the same asset are rejected automatically with the note "Asset issued to …".</p>
+<figure><img src="img/ams-requests-admin.jpg"><figcaption>Asset Requests for asset staff</figcaption></figure>
+
+<h2>6.2 Licences</h2>
+<p>A licence has a number of <b>seats</b>. A seat is given to a person, installed on an asset, or both. The bar shows seats used. A licence close to expiry shows <span class="pill amber">renew soon</span>, and an expired one shows <span class="pill red">expired</span>; expired licences cannot be checked out. Product keys are shown only to users who may edit the licence.</p>
+<ul>
+  <li><b>Check out a seat</b> (→ icon): choose a person and/or an asset.</li>
+  <li><b>Seat holders</b> (people icon): see who holds seats; check a seat in from there.</li>
+  <li>The number of seats cannot be reduced below the seats in use.</li>
+</ul>
+<figure><img src="img/ams-licenses.jpg"><figcaption>Licences</figcaption></figure>
+
+<h2>6.3 Accessories, consumables and components</h2>
+<table>
+  <thead><tr><th>Kind</th><th>Examples</th><th>How it works</th></tr></thead>
+  <tbody>
+    <tr><td><b>Accessories</b></td><td>Mouse, headset, barcode scanner</td><td>Lent to a person and returned. One of each item per person.</td></tr>
+    <tr><td><b>Consumables</b></td><td>Toner, receipt rolls, labels</td><td>Issued and used up (cannot be returned). The quantity in stock goes down.</td></tr>
+    <tr><td><b>Components</b></td><td>RAM, SSD</td><td>Installed into an asset. Removing one returns it to stock.</td></tr>
+  </tbody>
+</table>
+<p>Each item has a quantity, a re-order level and a unit cost. When available stock reaches the re-order level the item shows <span class="pill amber">re-order</span>, and the daily digest e-mail lists it. Switch on <b>Low stock only</b> to see just those.</p>
+<figure><img src="img/ams-consumables.jpg"><figcaption>Consumables with re-order warnings</figcaption></figure>
+
+<h2>6.4 Maintenance</h2>
+<p>Record repairs, upgrades, calibration and warranty work against an asset: type, title, provider, start and completion dates, cost, warranty flag and notes. <b>Open jobs only</b> shows work not yet completed. You can also log maintenance from the asset's detail page.</p>
+<figure><img src="img/ams-maintenance.jpg"><figcaption>Maintenance</figcaption></figure>
+
+<h2>6.5 Reports and activity log</h2>
+<p><b>Reports</b> show:</p>
+<ul>
+  <li>purchase value, book value and depreciation, by category, location and status;</li>
+  <li>tabs for depreciation, warranties ending, audits due and overdue check-ins.</li>
+</ul>
+<p><b>Export depreciation CSV</b> downloads the full table. The <b>Activity Log</b> lists who did what and when, with filters and CSV export.</p>
+<figure><img src="img/ams-reports.jpg"><figcaption>Reports</figcaption></figure>
+<figure><img src="img/ams-activity.jpg"><figcaption>Activity log</figcaption></figure>
+
+<h2>6.6 Setup lists</h2>
+<p>Under <b>Setup</b> the administrator maintains:</p>
+<ul>
+  <li><b>asset models</b>, each with a manufacturer, a category and an end-of-life;</li>
+  <li><b>categories</b>, with their depreciation period;</li>
+  <li><b>manufacturers</b> and <b>suppliers</b>;</li>
+  <li><b>locations</b>, whose codes must match UMS user locations, e.g. S045, DC-NR1, HO-GGN;</li>
+  <li><b>departments</b>;</li>
+  <li><b>status labels</b>, each of type Deployable, Pending, Undeployable or Archived.</li>
+</ul>
+<p>An entry that is in use cannot be deleted; the "In use" column shows how many records use it.</p>
+<figure><img src="img/ams-setup-locations.jpg"><figcaption>Setup · Locations</figcaption></figure>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">7</span>IT Support and Auditors: read-only access</h1>
+<ul>
+  <li><b>IT Support Engineers</b> see the AMS Dashboard and the asset list and details, to answer helpdesk questions such as "which laptop does this person have". They cannot change anything.</li>
+  <li><b>Internal Auditors</b> can view every page and export CSV files (on a managed device), but cannot change data.</li>
+</ul>
+<p>If you also hold another role (Sneha is both IT Support and Asset Manager), you get the combination of both.</p>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">8</span>UMS Administrators: the UMS Admin Portal</h1>
+<p>The UMS Admin Portal is where access to <i>every</i> application, AMS included, is managed. Sign in as <b>Ankit Saxena</b>. Other users can sign in too, but pages they are not allowed to use show a "not allowed" message from UMS. Choose the organisation (tenant) to manage in the <b>Tenant</b> selector at the top.</p>
+<figure><img src="img/ums-dashboard.jpg"><figcaption>UMS dashboard</figcaption></figure>
+
+<h2>8.1 Pages</h2>
+<table>
+  <thead><tr><th>Page</th><th>What you do there</th></tr></thead>
+  <tbody>
+    <tr><td><b>Dashboard</b></td><td>Key figures, the seven decision steps, decisions per application, users by status and department, items needing attention, recent changes.</td></tr>
+    <tr><td><b>Applications &amp; Modules</b></td><td>Register applications (in-house or third-party), enable them per tenant, and define modules, resources and the actions each resource allows.</td></tr>
+    <tr><td><b>Users</b></td><td>Search and filter. Bulk activate, lock or assign a role. Import and export CSV. Open a user to edit their profile, roles (with scope and validity dates), attributes, effective access and activity, or to set a password.</td></tr>
+    <tr><td><b>Roles &amp; Permissions</b></td><td>Create roles; tick permissions per application in a matrix (wildcards allowed); see members.</td></tr>
+    <tr><td><b>ABAC Policies</b></td><td>Rules on top of roles: Restrict (must be true), Deny (if true, refuse) and Grant (if true, allow without a role), with conditions on user, record and environment.</td></tr>
+    <tr><td><b>Office Hours &amp; Holidays</b></td><td>Weekly schedules (overnight supported) and the regional holiday calendar used by policies.</td></tr>
+    <tr><td><b>Access Simulator</b></td><td>Ask "can this user do this, on this record, now, from here?" and see every step of the answer plus a weekly heat-map.</td></tr>
+    <tr><td><b>Audit Trail</b></td><td>Every change in UMS with before/after values.</td></tr>
+    <tr><td><b>User Action Trail</b></td><td>Every allow/deny decision made for applications.</td></tr>
+    <tr><td><b>Exception Logs</b></td><td>Errors captured by the system; mark them resolved.</td></tr>
+    <tr><td><b>Tenants</b></td><td>Organisations (Vishal Mega Mart, the vendor network, UAT) and whether each is active.</td></tr>
+    <tr><td><b>Security Settings</b></td><td>Passwords, lockout, idle timeout, token lifetimes, single-device login (8.3).</td></tr>
+    <tr><td><b>Active Sessions</b></td><td>Who is signed in where; end a session (8.4).</td></tr>
+  </tbody>
+</table>
+<figure><img src="img/ums-users.jpg"><figcaption>Users</figcaption></figure>
+<figure><img src="img/ums-user-dialog.jpg"><figcaption>User dialog. Tabs: Profile, Roles, Attributes, Effective access, Activity. A password can be set at the bottom; Test access opens the simulator.</figcaption></figure>
+<figure><img src="img/ums-roles.jpg"><figcaption>Roles &amp; Permissions</figcaption></figure>
+<figure><img src="img/ums-policies.jpg"><figcaption>ABAC Policies</figcaption></figure>
+<figure><img src="img/ums-simulator-result.jpg"><figcaption>Access Simulator: a shift supervisor refunding ₹15,000 is denied by the "Supervisor refund limit ₹10,000" policy; each step is explained</figcaption></figure>
+
+<h2>8.2 Common tasks</h2>
+<h3>Give someone Asset Management access for one location</h3>
+<ol class="steps">
+  <li>Users → open the person → <b>Roles</b> tab → <b>Assign role</b>.</li>
+  <li>Choose <b>Asset Manager</b>. Under <b>Scope (resource-based restriction)</b> add <code>location</code> = <code>HO-GGN</code> (several locations: <code>S045,S046</code>).</li>
+  <li>Optionally set <b>Valid from / Valid to</b> for temporary cover. Save the user.</li>
+  <li>Check with <b>Test access</b> or the Access Simulator. The change applies at the person's next action; no restart or re-login is needed.</li>
+</ol>
+<h3>Onboard, change and offboard</h3>
+<ul>
+  <li><b>New joiner</b>: Users → New user (or CSV import). Fill in the profile (location and region matter for scopes and policies), give roles, set a password.</li>
+  <li><b>Contract staff</b>: set Employment type = Contract and an <b>Account expiry</b> date; sign-in stops after that date.</li>
+  <li><b>Leaver</b>: set Status to Inactive (or Locked). Then end their open sessions in Active Sessions.</li>
+  <li><b>Forgotten password</b>: open the user and use <b>Set password</b>.</li>
+</ul>
+<h3>Change a rule</h3>
+<p>Edit the policy in ABAC Policies, for example raise the high-value limit or change the schedule. Every application, AMS included, applies the new rule immediately. Test it with the Access Simulator first.</p>
+
+<h2>8.3 Security settings</h2>
+<table>
+  <thead><tr><th>Setting</th><th>Default (Vishal Mega Mart)</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td>Session idle timeout</td><td>30 minutes</td><td>Users are signed out after this much inactivity (with a 1-minute warning).</td></tr>
+    <tr><td>Single-device login</td><td>On</td><td>A new sign-in ends the user's other session in the same application.</td></tr>
+    <tr><td>Max failed logins · Lockout</td><td>5 · 30 minutes</td><td>Account locks after that many wrong passwords.</td></tr>
+    <tr><td>Password minimum length</td><td>12</td><td>Applied when a password is set (in addition to upper, lower and digit).</td></tr>
+    <tr><td>Access token lifetime</td><td>15 minutes</td><td>Renewed silently while the user is active.</td></tr>
+    <tr><td>Refresh token / maximum session</td><td>7 days</td><td>After this the user must sign in again.</td></tr>
+    <tr><td>Password expiry, MFA for admins / outside office, allowed IP ranges</td><td>90 days · on · on · 10.0.0.0/8…</td><td>Stored for the organisation; <b>not yet enforced</b> by sign-in (see the Business Rules document).</td></tr>
+  </tbody>
+</table>
+<figure><img src="img/ums-settings.jpg"><figcaption>Security Settings</figcaption></figure>
+
+<h2>8.4 Active sessions</h2>
+<p>Lists who is signed in to which application, the device, IP address, sign-in time and last activity. Switch off <b>Active only</b> to see ended sessions with the reason (signed out, idle, replaced by another device, ended by admin). Click the sign-out icon on a row to end a session, for example for a lost laptop. AMS signs that user out within a minute.</p>
+<figure><img src="img/ums-sessions.jpg"><figcaption>Active Sessions</figcaption></figure>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">9</span>E-mails sent by Asset Management</h1>
+<table>
+  <thead><tr><th>E-mail</th><th>Sent to</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td>Asset issued to you</td><td>The employee</td><td>An asset is checked out to them.</td></tr>
+    <tr><td>Asset returned</td><td>The employee who had it</td><td>The asset is checked in.</td></tr>
+    <tr><td>New asset request</td><td>IT asset desk mailbox; copy to the requester</td><td>A request is submitted.</td></tr>
+    <tr><td>Your asset request was approved / rejected</td><td>The requester</td><td>A request is decided (with the note or reason).</td></tr>
+    <tr><td>Asset desk digest</td><td>IT asset desk mailbox</td><td>Every morning at 08:30 IST: overdue check-ins, audits due within 30 days, licences expiring within 30 days, low stock.</td></tr>
+  </tbody>
+</table>
+<p class="small">E-mails go only to company addresses (allowed domains). In development they are saved as files instead of being sent.</p>
+
+<!-- ====================================================================== -->
+<h1 class="chapter"><span class="num">10</span>Troubleshooting and FAQ</h1>
+<table>
+  <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>A menu item or button I need is missing.</td><td>Your roles do not include it, or a policy blocks it for that record. Ask a UMS administrator to check your access with the Access Simulator.</td></tr>
+    <tr><td>"Not allowed by UMS — …" appears.</td><td>The text after the dash is the exact reason, e.g. outside operating hours, outside your location, value limit. Share it with your administrator if you think it is wrong.</td></tr>
+    <tr><td>I see only some assets.</td><td>Your role is scoped to certain locations, or (employees) you see only what is issued to you.</td></tr>
+    <tr><td>Check out is refused at night.</td><td>Check-out is allowed only during store operating hours, 08:00–23:00.</td></tr>
+    <tr><td>Approve is missing on a request.</td><td>It is your own request, MFA is not enabled on your account, or the request is outside your locations.</td></tr>
+    <tr><td>Export is refused.</td><td>You are on an unmanaged device or lack the Export permission.</td></tr>
+    <tr><td>I am signed out unexpectedly.</td><td>See the message on the sign-in page (section 3.5).</td></tr>
+    <tr><td>"Access could not be checked with UMS."</td><td>UMS is temporarily unreachable. For safety nothing is shown or changed; try again shortly and tell IT if it persists.</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>

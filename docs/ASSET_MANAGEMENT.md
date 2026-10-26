@@ -84,10 +84,10 @@ A slow mail server therefore never blocks a user.
 
 | E-mail | To |
 |--------|----|
-| Asset checked out / checked in | the employee (asset desk in copy) |
+| Asset checked out / checked in | the employee |
 | Asset request submitted | `Notifications:AssetDeskEmail` (requester in copy) |
 | Request approved / rejected | the requester |
-| Daily digest (`DailyDigestTime`, IST) | asset desk: audits due, overdue check-ins, warranties ending, low stock, pending requests |
+| Daily digest (`DailyDigestTime`, IST) | asset desk: overdue check-ins, audits due (30 days), licences expiring (30 days), low stock; not sent when empty |
 
 `EmailServerSettings` configures SMTP; `PickupDirectory` writes `.eml` files instead (development).
 
